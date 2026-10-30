@@ -28,12 +28,12 @@ const EXECUTIVES: Executive[] = [
   {
     role: 'Chief Technology Officer',
     code: 'CTO',
-    name: 'Femi Adeyemi',
+    name: 'Samuel Onuegbu',
     location: 'Abuja, Nigeria',
-    bio: 'Architecting COORDINA’s real-time schedule conflict engine, offline cryptographic ticket wallets, and low-data mobile performance optimized for African telecom networks.',
-    image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=85',
-    linkedin: 'https://linkedin.com',
-    twitter: 'https://x.com',
+    bio: 'Architecting COORDINA’s real-time schedule conflict engine, offline cryptographic ticket wallets, remote verification framework, and low-data mobile performance optimized for African networks.',
+    image: '/team/samuel-onuegbu.jpg',
+    linkedin: 'https://linkedin.com/in/samuelonuegbu',
+    twitter: 'https://x.com/samuelonuegbu',
   },
   {
     role: 'Chief Operating Officer',
