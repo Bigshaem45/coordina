@@ -300,18 +300,26 @@ export default function PlanCart() {
                 <span className="muted">Subtotal</span>
                 <span>{naira(sub)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="muted">Service fee (5%)</span>
-                <span>{naira(fees.service)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="muted">Processing</span>
-                <span>{naira(fees.processing)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="muted">VAT (7.5% on fees)</span>
-                <span>{naira(fees.vat)}</span>
-              </div>
+              {sub === 0 ? (
+                <div className="rounded-xl border border-neon-500/20 bg-neon-50/50 p-2.5 text-[11px] text-neon-700 dark:bg-neon-500/10 dark:text-neon-400">
+                  <span className="font-semibold">Free RSVP</span> · ₦0 attendee processing fee
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="muted">Platform service fee (5%)</span>
+                    <span>{naira(fees.service)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="muted">Payment processing</span>
+                    <span>{naira(fees.processing)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="muted">VAT (7.5% on fees)</span>
+                    <span>{naira(fees.vat)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between border-t border-[var(--border)] pt-2.5 text-base font-bold text-slate-900 dark:text-white">
                 <span>Total</span>
                 <span>{naira(fees.total)}</span>

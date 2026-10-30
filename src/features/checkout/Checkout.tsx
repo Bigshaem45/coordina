@@ -99,11 +99,10 @@ export default function Checkout() {
                   type="button"
                   onClick={() => setProvider(p)}
                   aria-pressed={provider === p}
-                  className={`rounded-lg px-3 py-1 text-xs font-medium transition ${
-                    provider === p
+                  className={`rounded-lg px-3 py-1 text-xs font-medium transition ${provider === p
                       ? 'bg-white text-slate-900 shadow-2xs dark:bg-slate-700 dark:text-white'
                       : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                  }`}
+                    }`}
                 >
                   {p}
                 </button>
@@ -117,11 +116,10 @@ export default function Checkout() {
               return (
                 <label
                   key={m}
-                  className={`flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-xs font-medium transition ${
-                    active
+                  className={`flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-xs font-medium transition ${active
                       ? 'border-brand-500 bg-brand-50/70 text-brand-700 dark:bg-brand-500/15 dark:text-white'
                       : 'border-[var(--border)] text-slate-700 hover:border-slate-300 dark:text-slate-200'
-                  }`}
+                    }`}
                 >
                   <input
                     type="radio"
@@ -208,27 +206,50 @@ export default function Checkout() {
       )}
 
       {/* Fee Summary */}
-      <Card className="mt-4 space-y-2 p-5 text-xs">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Order Summary</h3>
-        <div className="flex justify-between">
-          <span className="muted">Subtotal</span>
-          <span>{naira(sub)}</span>
+      <Card className="mt-4 space-y-2.5 p-5 text-xs">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Order Summary</h3>
+          {sub === 0 && (
+            <span className="rounded-full bg-neon-50 px-2.5 py-0.5 text-[11px] font-semibold text-neon-700 dark:bg-neon-500/15 dark:text-neon-400">
+              Free Admission · ₦0 Fee
+            </span>
+          )}
         </div>
         <div className="flex justify-between">
-          <span className="muted">Service fee (5%)</span>
-          <span>{naira(f.service)}</span>
+          <span className="muted">Tickets Subtotal</span>
+          <span className="font-medium text-slate-900 dark:text-white">{naira(sub)}</span>
         </div>
-        <div className="flex justify-between">
-          <span className="muted">Processing</span>
-          <span>{naira(f.processing)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="muted">VAT (7.5% on fees)</span>
-          <span>{naira(f.vat)}</span>
-        </div>
+        {sub === 0 ? (
+          <div className="rounded-xl border border-neon-500/20 bg-neon-50/50 p-2.5 text-slate-700 dark:bg-neon-500/10 dark:text-slate-300">
+            <p className="flex items-center gap-1.5 font-medium text-neon-700 dark:text-neon-400">
+              <Icon name="check_circle" className="text-sm" />
+              <span>No Processing Fees for Free Events</span>
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              Free events carry ₦0 attendee service or processing charge. Organisers cover hosting and verification fees directly.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="flex justify-between">
+              <span className="muted">Platform service fee (5%)</span>
+              <span>{naira(f.service)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="muted">Payment processing fee</span>
+              <span>{naira(f.processing)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="muted">VAT (7.5% on fees)</span>
+              <span>{naira(f.vat)}</span>
+            </div>
+          </>
+        )}
         <div className="flex justify-between border-t border-[var(--border)] pt-2.5 text-base font-bold text-slate-900 dark:text-white">
           <span>Total</span>
-          <span>{naira(f.total)}</span>
+          <span className={sub === 0 ? 'text-neon-600 dark:text-neon-400' : 'text-slate-900 dark:text-white'}>
+            {naira(f.total)}
+          </span>
         </div>
       </Card>
 

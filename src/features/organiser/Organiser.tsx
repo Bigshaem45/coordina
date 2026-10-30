@@ -5,7 +5,7 @@ import { Icon } from '../../design-system/Icon';
 import { CATEGORIES, AREAS, spaces, CATEGORY_PHOTO } from '../../data/mock';
 import { Badge, Button, Card, Chip, Cover, EmptyState } from '../../design-system/ui';
 import { useAllEvents, useStore } from '../../store';
-import { fmtDate, fmtTime, naira } from '../../lib/format';
+import { fmtDate, fmtTime, naira, computeOrganiserPostingFee, FREE_EVENT_RATE_PER_100 } from '../../lib/format';
 import { toast } from '../../lib/fx';
 import type { Category, CEvent, Vibe } from '../../types';
 
@@ -252,6 +252,7 @@ function Create({ onDone }: { onDone: () => void }) {
   const [tiers, setTiers] = useState([{ name: 'General', price: 5000, qty: 200 }]);
   const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
   const valid = f.title.trim() && f.date && tiers.every((t) => t.name.trim() && t.qty > 0);
+  const postingFee = computeOrganiserPostingFee(tiers);
 
   const submit = () => {
     const a = AREAS[f.area];
@@ -283,7 +284,11 @@ function Create({ onDone }: { onDone: () => void }) {
       lng: a.lng,
     };
     add(ev);
-    toast('Event submitted. It goes live after verification');
+    if (postingFee.isFree) {
+      toast(`Free Event submitted! Organiser hosting fee of ${naira(postingFee.postingFee)} (${postingFee.totalCapacity} guests @ ₦2,500/100) billed.`);
+    } else {
+      toast('Paid Event submitted! ₦0 organiser fee (attendees pay processing at checkout).');
+    }
     onDone();
   };
 
@@ -371,11 +376,23 @@ function Create({ onDone }: { onDone: () => void }) {
       </div>
 
       <div className="space-y-2.5 pt-1">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Ticket Tiers (₦)</h3>
-          <Button variant="outline" size="sm" onClick={() => setTiers([...tiers, { name: 'VIP', price: 20000, qty: 50 }])}>
-            + Add Tier
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Ticket Tiers (₦)</h3>
+            <p className="muted text-[11px]">Set price to ₦0 for free admissions</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setTiers([{ name: 'Free RSVP', price: 0, qty: 100 }])}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
+            >
+              Make Free (₦0)
+            </button>
+            <Button variant="outline" size="sm" onClick={() => setTiers([...tiers, { name: 'VIP', price: 20000, qty: 50 }])}>
+              + Add Tier
+            </Button>
+          </div>
         </div>
         {tiers.map((t, i) => (
           <div key={i} className="grid grid-cols-[1fr_110px_90px_36px] items-center gap-2">
@@ -415,8 +432,59 @@ function Create({ onDone }: { onDone: () => void }) {
         ))}
       </div>
 
+      {/* COORDINA Platform Fee Breakdown */}
+      <div
+        className={`rounded-2xl border p-4 transition-colors ${
+          postingFee.isFree
+            ? 'border-brand-500/30 bg-brand-500/5 dark:bg-brand-500/10'
+            : 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-midnight-900/60'
+        }`}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <span
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+                postingFee.isFree
+                  ? 'bg-brand-500 text-white'
+                  : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
+              <Icon name={postingFee.isFree ? 'payments' : 'check_circle'} className="text-base" />
+            </span>
+            <div>
+              <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                {postingFee.isFree ? 'Free Event Organiser Hosting Fee' : 'Paid Event: ₦0 Upfront Posting Fee'}
+              </p>
+              <p className="muted text-[11px]">
+                {postingFee.isFree
+                  ? `₦${FREE_EVENT_RATE_PER_100.toLocaleString('en-NG')} per 100 persons capacity (${postingFee.hundredBlocks} block${postingFee.hundredBlocks > 1 ? 's' : ''} for ${postingFee.totalCapacity} guests)`
+                  : 'Attendees pay standard 5% + ₦100 processing fee during checkout'}
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-base font-bold text-slate-900 dark:text-slate-100">
+              {postingFee.isFree ? naira(postingFee.postingFee) : '₦0'}
+            </span>
+            <span className="block text-[10px] font-medium text-brand-600 dark:text-brand-400">
+              {postingFee.isFree ? 'Attendee Fee: ₦0 Free' : 'Free to Post'}
+            </span>
+          </div>
+        </div>
+
+        {postingFee.isFree ? (
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+            For free events, all attendees RSVP with <strong>₦0 attendee processing fee</strong>. The organiser posting fee of <strong>{naira(postingFee.postingFee)}</strong> covers platform verification, cryptographic QR ticket generation, and gate scanner support.
+          </p>
+        ) : (
+          <p className="mt-2.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+            Organisers post paid events for free. COORDINA deducts platform processing and gateway fees directly at ticket checkout.
+          </p>
+        )}
+      </div>
+
       <Button full size="lg" disabled={!valid} onClick={submit}>
-        Publish Event
+        {postingFee.isFree ? `Pay ${naira(postingFee.postingFee)} & Publish Free Event` : 'Publish Event (Free to Post)'}
       </Button>
     </Card>
   );
@@ -525,6 +593,31 @@ function Payouts() {
             </div>
           </div>
         ))}
+      </Card>
+
+      {/* Platform Fee Schedule Information */}
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">COORDINA Fee Schedule</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-midnight-900">
+            <div className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
+              <Icon name="confirmation_number" className="text-brand-500" />
+              <span>Paid Ticket Events</span>
+            </div>
+            <p className="mt-1 leading-relaxed text-slate-600 dark:text-slate-300">
+              Organisers pay <strong>₦0 to post</strong>. Ticket buyers pay 5% platform service fee (capped at ₦2,000) + ₦100 payment processing fee at checkout.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-midnight-900">
+            <div className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
+              <Icon name="loyalty" className="text-neon-500" />
+              <span>Free Admission Events</span>
+            </div>
+            <p className="mt-1 leading-relaxed text-slate-600 dark:text-slate-300">
+              Attendees RSVP <strong>100% free with ₦0 fee</strong>. Organiser pays <strong>₦2,500 per 100 persons capacity</strong> to cover hosting, verification, and gate scanning.
+            </p>
+          </div>
+        </div>
       </Card>
 
       <EmptyState icon="account_balance" title="Need to update your settlement bank?" text="Manage verified Nigerian corporate or personal payout accounts in account settings." />

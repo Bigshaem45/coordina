@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { detectClashes, type PlanItem } from './clash';
-import { computeFees } from './format';
+import { computeFees, computeOrganiserPostingFee } from './format';
 import { events } from '../data/mock';
 
 const item = (id: string, tierIdx = 0): PlanItem => {
@@ -37,6 +37,26 @@ describe('fees', () => {
   it('adds fees to subtotal', () => {
     const f = computeFees(10000, 1);
     expect(f.total).toBe(10000 + f.service + f.processing + f.vat);
+  });
+
+  it('charges organiser ₦2500 per 100 capacity for free events', () => {
+    const fee100 = computeOrganiserPostingFee([{ price: 0, qty: 100 }]);
+    expect(fee100.isFree).toBe(true);
+    expect(fee100.hundredBlocks).toBe(1);
+    expect(fee100.postingFee).toBe(2500);
+
+    const fee250 = computeOrganiserPostingFee([{ price: 0, qty: 250 }]);
+    expect(fee250.hundredBlocks).toBe(3); // 250 rounded up to 3 blocks
+    expect(fee250.postingFee).toBe(7500);
+
+    const fee500 = computeOrganiserPostingFee([{ price: 0, qty: 500 }]);
+    expect(fee500.postingFee).toBe(12500);
+  });
+
+  it('charges ₦0 organiser posting fee for paid events', () => {
+    const feePaid = computeOrganiserPostingFee([{ price: 5000, qty: 200 }]);
+    expect(feePaid.isFree).toBe(false);
+    expect(feePaid.postingFee).toBe(0);
   });
 });
 

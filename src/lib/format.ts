@@ -2,7 +2,49 @@ import type { CEvent } from '../types';
 
 export const naira = (n: number) => (n === 0 ? 'Free' : `₦${n.toLocaleString('en-NG')}`);
 
-/** Transparent fees: 5% service fee (capped ₦2,000 per ticket line) plus flat ₦100 processing per order. VAT 7.5% on fees. */
+/** Organiser capacity fee for Free Events: ₦2,500 per 100 persons capacity. */
+export const FREE_EVENT_RATE_PER_100 = 2500;
+
+export interface OrganiserPostingFee {
+  isFree: boolean;
+  totalCapacity: number;
+  hundredBlocks: number;
+  ratePer100: number;
+  postingFee: number;
+}
+
+/**
+ * Calculates organiser posting fee:
+ * - Paid events: ₦0 upfront fee (attendees pay processing at checkout)
+ * - Free events: ₦2,500 per 100 attendees capacity (covers verification, server load, and QR check-in)
+ */
+export function computeOrganiserPostingFee(tiers: { price: number; qty: number }[]): OrganiserPostingFee {
+  const isFree = tiers.length > 0 && tiers.every((t) => Number(t.price) === 0);
+  const totalCapacity = tiers.reduce((sum, t) => sum + (Number(t.qty) || 0), 0);
+
+  if (!isFree || totalCapacity <= 0) {
+    return {
+      isFree,
+      totalCapacity,
+      hundredBlocks: 0,
+      ratePer100: FREE_EVENT_RATE_PER_100,
+      postingFee: 0,
+    };
+  }
+
+  const hundredBlocks = Math.max(1, Math.ceil(totalCapacity / 100));
+  const postingFee = hundredBlocks * FREE_EVENT_RATE_PER_100;
+
+  return {
+    isFree: true,
+    totalCapacity,
+    hundredBlocks,
+    ratePer100: FREE_EVENT_RATE_PER_100,
+    postingFee,
+  };
+}
+
+/** Transparent attendee fees: 5% service fee (capped ₦2,000 per ticket line) plus flat ₦100 processing per order. VAT 7.5% on fees. Free events have ₦0 fees for attendees. */
 export function computeFees(subtotal: number, lines: number) {
   if (subtotal === 0) return { service: 0, processing: 0, vat: 0, total: 0, fees: 0 };
   const service = Math.min(Math.round(subtotal * 0.05), 2000 * Math.max(lines, 1));
