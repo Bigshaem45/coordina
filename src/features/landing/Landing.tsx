@@ -50,7 +50,7 @@ export default function Landing() {
   const featured = events.slice(0, 6);
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)]">
       {/* Minimalist Sticky Navbar */}
       <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-white/85 backdrop-blur-xl dark:bg-midnight-900/85">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-6">

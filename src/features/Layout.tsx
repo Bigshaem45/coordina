@@ -56,7 +56,7 @@ export function Layout() {
 
   return (
     <div
-      className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${
+      className={`min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)] ${
         hasOwnBottomBar
           ? 'pb-[calc(6rem+env(safe-area-inset-bottom,0px))]'
           : 'pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-12'
@@ -114,14 +114,14 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl md:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 md:px-6">
         <Outlet />
       </main>
 
       {/* Mobile Tab Bar (hidden on detail/checkout screens that mount their own sticky CTA bar) */}
       {!hasOwnBottomBar && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(4rem+env(safe-area-inset-bottom,0px))] items-center border-t border-[var(--border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 flex w-full max-w-full h-[calc(4rem+env(safe-area-inset-bottom,0px))] items-center border-t border-[var(--border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
           aria-label="Primary"
         >
           {MOBILE_NAV.map((n) => (

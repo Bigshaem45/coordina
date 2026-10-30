@@ -43,7 +43,7 @@ export default function Auth() {
     'h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100';
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] md:grid md:grid-cols-12">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)] md:grid md:grid-cols-12">
       {/* Editorial Photo Side (Desktop) */}
       <div className="relative hidden flex-col justify-between overflow-hidden bg-slate-950 p-10 text-white md:col-span-6 md:flex lg:col-span-7">
         <img
