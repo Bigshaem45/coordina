@@ -8,6 +8,7 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -38,6 +39,9 @@ jobs:
 
       - name: Build Web Production Assets
         run: npm run build
+
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x android/gradlew
 
       - name: Sync Capacitor Android
         run: npx cap sync android
