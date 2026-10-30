@@ -325,8 +325,8 @@ export default function PlanCart() {
         </div>
       </div>
 
-      {/* Mobile Sticky Bar positioned cleanly above the 64px (bottom-16) mobile tab bar */}
-      <div className="fixed inset-x-0 bottom-16 z-30 border-t border-[var(--border)] bg-white/95 px-4 py-3 backdrop-blur-xl dark:bg-midnight-900/95 md:hidden">
+      {/* Mobile Sticky Bar positioned cleanly above the mobile tab bar + safe area */}
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-30 border-t border-[var(--border)] bg-white/95 px-4 py-3 backdrop-blur-xl dark:bg-midnight-900/95 md:hidden">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
             <p className="muted text-[11px]">{items.length} event{items.length > 1 ? 's' : ''}</p>

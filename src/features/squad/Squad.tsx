@@ -272,7 +272,7 @@ export function SquadDetail() {
         )}
       </Card>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 p-3 backdrop-blur-md dark:border-slate-800 dark:bg-midnight-900/95">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur-md dark:border-slate-800 dark:bg-midnight-900/95">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
           <div className="hidden sm:block">
             <p className="muted text-xs">{winners.length} winning event(s)</p>

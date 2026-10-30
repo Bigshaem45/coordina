@@ -345,7 +345,7 @@ export default function EventDetail() {
       )}
 
       {/* Docked Mobile Bottom Action Bar (No mobile tab bar on this route -> zero overlap!) */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-white/95 px-4 py-3 backdrop-blur-xl dark:bg-midnight-900/95 md:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden">
         <div className="mx-auto flex max-w-lg items-center gap-2.5">
           <div className="mr-1">
             <p className="muted text-[11px]">Total</p>

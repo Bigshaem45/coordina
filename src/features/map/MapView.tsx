@@ -44,7 +44,7 @@ export default function MapView() {
   const zoom = area ? 14 : city === 'Abuja' ? 12 : 11;
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col md:h-[calc(100vh-5.5rem)] md:py-4">
+    <div className="flex h-[calc(100dvh-4rem-env(safe-area-inset-bottom,0px))] flex-col md:h-[calc(100vh-5.5rem)] md:py-4">
       <div className="space-y-2 px-4 py-3 md:px-0 md:pt-0">
         <div className="no-scrollbar flex items-center gap-2 overflow-x-auto pb-1">
           <Chip active={now} onClick={() => setNow(!now)}>

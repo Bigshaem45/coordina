@@ -55,7 +55,13 @@ export function Layout() {
   }, [swapNotice]);
 
   return (
-    <div className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${hasOwnBottomBar ? 'pb-24' : 'pb-20 md:pb-12'}`}>
+    <div
+      className={`min-h-screen bg-[var(--bg)] text-[var(--text)] ${
+        hasOwnBottomBar
+          ? 'pb-[calc(6rem+env(safe-area-inset-bottom,0px))]'
+          : 'pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-12'
+      }`}
+    >
       {/* Desktop Top Header */}
       <header className="sticky top-0 z-40 hidden border-b border-[var(--border)] bg-white/85 backdrop-blur-xl dark:bg-midnight-900/85 md:block">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-6">
@@ -115,7 +121,7 @@ export function Layout() {
       {/* Mobile Tab Bar (hidden on detail/checkout screens that mount their own sticky CTA bar) */}
       {!hasOwnBottomBar && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-40 flex h-16 items-center border-t border-[var(--border)] bg-white/92 px-2 backdrop-blur-xl dark:bg-midnight-900/92 md:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(4rem+env(safe-area-inset-bottom,0px))] items-center border-t border-[var(--border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
           aria-label="Primary"
         >
           {MOBILE_NAV.map((n) => (
@@ -125,22 +131,28 @@ export function Layout() {
               end={n.end}
               data-cart-target={n.cart ? true : undefined}
               className={({ isActive }) =>
-                `flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] font-medium transition-colors ${
-                  isActive ? 'text-brand-500 dark:text-brand-400' : 'text-slate-500 dark:text-slate-400'
+                `relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1 text-[11px] font-medium transition-all duration-150 active:scale-95 ${
+                  isActive
+                    ? 'font-semibold text-brand-600 dark:text-brand-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
-                  <span className="relative flex h-6 items-center justify-center text-[21px]">
-                    <Icon name={n.icon} filled={isActive} />
+                  <span
+                    className={`relative flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
+                      isActive ? 'bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300' : ''
+                    }`}
+                  >
+                    <Icon name={n.icon} filled={isActive} className="text-[20px]" />
                     {n.cart && count > 0 && (
-                      <span className="absolute -right-2.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-coral-500 px-1 text-[10px] font-bold leading-none text-white">
+                      <span className="absolute right-1 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-coral-500 px-1 text-[9px] font-bold leading-none text-white shadow-2xs">
                         {count}
                       </span>
                     )}
                   </span>
-                  <span>{n.label}</span>
+                  <span className="leading-none">{n.label}</span>
                 </>
               )}
             </NavLink>
