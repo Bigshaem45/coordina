@@ -34,11 +34,8 @@ jobs:
       - name: Build Web Production Assets
         run: npm run build
 
-      - name: Install Capacitor Android
-        run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap add android || true
-          npx cap sync android
+      - name: Sync Capacitor Android
+        run: npx cap sync android
 
       - name: Build Debug APK with Gradle
         run: |
