@@ -77,3 +77,4 @@ export function VerificationBadge({
     </div>
   );
 }
+
