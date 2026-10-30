@@ -8,6 +8,7 @@ import { useAllEvents, usePlanItems, useStore } from '../../store';
 import { detectClashes } from '../../lib/clash';
 import { fmtDate, fmtTime, mapLink, naira } from '../../lib/format';
 import { toast } from '../../lib/fx';
+import { googleCalLink, openCalendarEvent, whatsappEvent, getEventShareUrl } from '../../lib/calendar';
 import { useAddToPlan, EventCard } from '../discover/EventCard';
 import { recommend } from '../../lib/recommend';
 
@@ -48,7 +49,6 @@ export default function EventDetail() {
     [event.category],
     event.vibe,
   ).slice(0, 3);
-  const shareText = `${event.title} · ${fmtDate(event.start)} ${fmtTime(event.start)} · ${event.area} on COORDINA`;
 
   return (
     <div className="pb-6 md:py-6">
@@ -103,19 +103,31 @@ export default function EventDetail() {
         <div className="space-y-6 md:col-span-7">
           {/* Quick Info Tiles */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <Card className="flex items-start gap-3 p-4">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-300">
-                <Icon name="calendar_today" />
-              </span>
-              <div>
-                <p className="muted text-xs">Date &amp; Time</p>
-                <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
-                  {fmtDate(event.start, { weekday: 'short', day: 'numeric', month: 'short' })}
-                </p>
-                <p className="muted text-xs">
-                  {fmtTime(event.start)} – {fmtTime(event.end)}
-                </p>
+            <Card className="group flex items-start justify-between gap-3 p-4 transition hover:border-brand-300 dark:hover:border-brand-500/40">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500 transition group-hover:scale-105 group-hover:bg-brand-500 group-hover:text-white dark:bg-brand-500/15 dark:text-brand-300">
+                  <Icon name="calendar_today" />
+                </span>
+                <div>
+                  <p className="muted text-xs">Date &amp; Time</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+                    {fmtDate(event.start, { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </p>
+                  <p className="muted text-xs">
+                    {fmtTime(event.start)} – {fmtTime(event.end)}
+                  </p>
+                </div>
               </div>
+              <a
+                href={googleCalLink(event)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-brand-600 shadow-2xs transition hover:bg-brand-50 hover:border-brand-400 dark:border-slate-700 dark:bg-midnight-800 dark:text-brand-300 dark:hover:bg-brand-500/20"
+                title="Add to Google Calendar"
+              >
+                <Icon name="event" className="text-xs" />
+                <span>+ Cal</span>
+              </a>
             </Card>
 
             <Card className="flex items-start gap-3 p-4">
@@ -424,21 +436,33 @@ export default function EventDetail() {
         </div>
         <div className="grid grid-cols-2 gap-2.5">
           <a
-            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-[#10B981] text-sm font-medium text-white hover:bg-[#059669]"
+            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-[#10B981] text-sm font-medium text-white transition hover:bg-[#059669]"
             target="_blank"
             rel="noreferrer"
-            href={`https://wa.me/?text=${encodeURIComponent(shareText)}`}
+            href={whatsappEvent(event)}
           >
             <Icon name="chat" className="text-base" /> WhatsApp
           </a>
           <Button
             variant="outline"
             onClick={() => {
-              navigator.clipboard?.writeText(shareText);
-              toast('Invite text copied');
+              const url = getEventShareUrl(event.id);
+              navigator.clipboard?.writeText(url);
+              toast('Event link copied: ' + url);
             }}
           >
             <Icon name="content_copy" className="text-base" /> Copy Link
+          </Button>
+        </div>
+        <div className="mt-3">
+          <Button
+            full
+            variant="secondary"
+            onClick={() => {
+              openCalendarEvent(event);
+            }}
+          >
+            <Icon name="event" className="text-base" /> Add to Calendar
           </Button>
         </div>
       </BottomSheet>

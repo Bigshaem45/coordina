@@ -772,8 +772,20 @@ function OrganizerVerificationPortal() {
                     className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
                   >
                     <Icon name="link" className="text-xs" />
-                    Open Venue Confirmation Link
+                    Open Portal
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const portalUrl = `https://coordina-beta.vercel.app/venue-portal/${v.venueConfirmation.token}`;
+                      navigator.clipboard?.writeText(portalUrl);
+                      toast('Venue confirmation link copied!');
+                    }}
+                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
+                  >
+                    <Icon name="content_copy" className="text-xs" />
+                    Copy Token Link
+                  </button>
                 </div>
               </div>
             </Card>

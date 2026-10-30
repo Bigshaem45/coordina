@@ -113,8 +113,10 @@ export function SquadList() {
                   .map((f) => f.trim())
                   .filter(Boolean),
               );
+              const squadUrl = `https://coordina-beta.vercel.app/squad/${id}`;
+              navigator.clipboard?.writeText?.(squadUrl);
               setOpen(false);
-              toast('Invite link copied. Share it on WhatsApp');
+              toast('Squad invite link copied! Share it on WhatsApp');
               nav(`/squad/${id}`);
             }}
           >
@@ -164,6 +166,14 @@ export function SquadDetail() {
             Voting as <b className="text-slate-900 dark:text-slate-100">{as}</b> · tap a member chip below to preview their vote.
           </p>
         </div>
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(`Join our group plan for "${squad.name}" on COORDINA!\nVote on events & split tickets:\n👉 https://coordina-beta.vercel.app/squad/${squad.id}`)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-500/20 dark:text-emerald-400"
+        >
+          <Icon name="chat" className="text-sm" /> Invite via WhatsApp
+        </a>
       </div>
 
       <Card className="mt-4 p-4">

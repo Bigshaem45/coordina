@@ -6,6 +6,7 @@ import { Badge, BottomSheet, Button, Card, Cover, EmptyState } from '../../desig
 import { useAllEvents, useStore } from '../../store';
 import { fmtDate, fmtTime, mapLink } from '../../lib/format';
 import { toast } from '../../lib/fx';
+import { googleCalLink } from '../../lib/calendar';
 import type { Ticket } from '../../types';
 
 export default function Wallet() {
@@ -153,6 +154,15 @@ export default function Wallet() {
                       >
                         Map
                       </a>
+                      <a
+                        className="text-slate-500 hover:text-brand-500 dark:text-slate-400"
+                        href={googleCalLink(e)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Add to Google Calendar"
+                      >
+                        + Cal
+                      </a>
                       {!gone && !t.refundRequested && (
                         <button
                           type="button"
@@ -212,18 +222,29 @@ export default function Wallet() {
                 <p className="font-mono text-xs tracking-[0.2em] text-slate-500">{view.id}</p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setBright(!bright)}
-                className={`mt-6 inline-flex h-11 items-center gap-2 rounded-xl px-5 text-xs font-semibold transition ${
-                  bright
-                    ? 'border border-slate-200 bg-slate-900 text-white hover:bg-slate-800'
-                    : 'bg-brand-500 text-white hover:bg-brand-600'
-                }`}
-              >
-                <Icon name="light_mode" className="text-base" />
-                {bright ? 'Standard Screen Mode' : 'Boost Screen Brightness'}
-              </button>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBright(!bright)}
+                  className={`inline-flex h-11 items-center gap-2 rounded-xl px-5 text-xs font-semibold transition ${
+                    bright
+                      ? 'border border-slate-200 bg-slate-900 text-white hover:bg-slate-800'
+                      : 'bg-brand-500 text-white hover:bg-brand-600'
+                  }`}
+                >
+                  <Icon name="light_mode" className="text-base" />
+                  {bright ? 'Standard Screen Mode' : 'Boost Brightness'}
+                </button>
+                <a
+                  href={googleCalLink(e)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-white/20"
+                >
+                  <Icon name="event" className="text-base" />
+                  Add to Calendar
+                </a>
+              </div>
             </div>
           );
         })()}
