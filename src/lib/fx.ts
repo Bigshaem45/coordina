@@ -1,7 +1,13 @@
-export const toast = (message: string) => window.dispatchEvent(new CustomEvent('cho-toast', { detail: message }));
+import { triggerHaptic } from './capacitor';
+
+export const toast = (message: string) => {
+  triggerHaptic('light');
+  window.dispatchEvent(new CustomEvent('cho-toast', { detail: message }));
+};
 
 /** Card-to-cart fly animation. Flies a clean rounded thumbnail from `from` to the visible cart target. */
 export function flyToCart(from: DOMRect, image: string) {
+  triggerHaptic('medium');
   const targets = Array.from(document.querySelectorAll<HTMLElement>('[data-cart-target]'));
   const target = targets.find((t) => t.offsetParent !== null);
   if (!target || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;

@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { Suspense, lazy, useEffect } from 'react';
+import { BrowserRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { Layout } from './features/Layout';
 import Home from './features/discover/Home';
 import Onboarding from './features/onboarding/Onboarding';
@@ -7,6 +7,19 @@ import Landing from './features/landing/Landing';
 import Auth from './features/auth/Auth';
 import { Skeleton } from './design-system/ui';
 import { ErrorBoundary } from './design-system/ErrorBoundary';
+import { initCapacitor } from './lib/capacitor';
+
+function NativeLifecycleBridge() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    initCapacitor(() => {
+      if (window.history.length > 1) {
+        navigate(-1);
+      }
+    });
+  }, [navigate]);
+  return null;
+}
 
 const Discover = lazy(() => import('./features/discover/Discover'));
 const EventDetail = lazy(() => import('./features/event/EventDetail'));
@@ -28,6 +41,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <NativeLifecycleBridge />
         <Suspense fallback={<div className="p-4"><Skeleton className="h-40" /></div>}>
           <Routes>
             <Route path="/" element={<Landing />} />

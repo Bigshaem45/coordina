@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">COORDINA</string>
+    <string name="title_activity_main">COORDINA</string>
+    <string name="package_name">ng.coordina.app</string>
+    <string name="custom_url_scheme">ng.coordina.app</string>
+</resources>
