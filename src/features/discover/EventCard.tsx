@@ -4,6 +4,7 @@ import { Icon } from '../../design-system/Icon';
 import type { CEvent } from '../../types';
 import { getSpace, minPrice } from '../../data/mock';
 import { Cover } from '../../design-system/ui';
+import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { fmtDate, fmtTime, naira } from '../../lib/format';
 import { useStore } from '../../store';
 import { flyToCart, toast } from '../../lib/fx';
@@ -53,9 +54,12 @@ export function EventCard({
             <span className="truncate">{sp?.name ?? event.area}, {event.area}</span>
             {sp?.verified && <Icon name="verified" filled className="text-[13px] text-neon-500" />}
           </p>
-          <p className="mt-1 text-xs font-semibold text-slate-800 dark:text-slate-200">
-            {p === 0 ? 'Free' : naira(p)}
-          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+              {p === 0 ? 'Free' : naira(p)}
+            </span>
+            <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />
+          </div>
         </Link>
         <button
           type="button"
@@ -115,7 +119,9 @@ export function EventCard({
         </Link>
 
         <div className="mt-3.5 flex items-center justify-between border-t border-[var(--border)] pt-3">
-          <span className="text-xs text-slate-500 dark:text-slate-400">{event.vibe}</span>
+          <div className="flex items-center gap-1.5 truncate">
+            <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />
+          </div>
           <button
             type="button"
             onClick={() => !inCart && add(event, ref.current?.getBoundingClientRect())}

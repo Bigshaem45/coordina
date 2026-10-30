@@ -20,6 +20,8 @@ export default function Discover() {
   const [vibe, setVibe] = useState<Vibe | null>(null);
   const [area, setArea] = useState<string | null>(null);
   const [tab, setTab] = useState<'events' | 'spaces'>('events');
+  const [spaceType, setSpaceType] = useState<string | null>(null);
+  const [crowdFilter, setCrowdFilter] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
   const city = useStore((s) => s.city);
   const setCity = useStore((s) => s.setCity);
@@ -43,7 +45,9 @@ export default function Discover() {
   const spaceList = spaces.filter(
     (s) =>
       s.city === city &&
-      (!q || (s.name + s.type + s.area).toLowerCase().includes(q.toLowerCase())) &&
+      (!spaceType || s.type === spaceType) &&
+      (!crowdFilter || s.crowd === crowdFilter) &&
+      (!q || (s.name + s.type + s.area + (s.amenities?.join(' ') ?? '')).toLowerCase().includes(q.toLowerCase())) &&
       (!area || s.area === area),
   );
 
@@ -162,37 +166,105 @@ export default function Discover() {
             ))}
           </div>
         )
-      ) : spaceList.length === 0 ? (
-        <EmptyState icon="storefront" title="No spaces found" text="Try another search keyword or area." />
       ) : (
-        <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {spaceList.map((s) => (
-            <Link
-              key={s.id}
-              to={`/space/${s.id}`}
-              className="surface group overflow-hidden rounded-2xl shadow-card transition hover:-translate-y-0.5 hover:shadow-float"
-            >
-              <div className="relative h-44 overflow-hidden">
-                <Cover gradient={s.image} className="h-full w-full" label={s.name} />
-                <span className="absolute left-3 top-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-xs">
-                  From {naira(s.bookingFrom)}
-                </span>
-                <span className="absolute right-3 top-3 rounded-lg bg-slate-900/75 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md">
-                  {s.type}
-                </span>
-              </div>
-              <div className="space-y-1.5 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="truncate text-base font-semibold text-slate-900 dark:text-white">{s.name}</h3>
-                  <Stars value={s.rating} />
-                </div>
-                <p className="muted text-xs">{s.area}, {s.city} · {s.hours}</p>
-                <div className="pt-1">
-                  {s.verified ? <VerifiedBadge /> : <span className="muted text-xs">Unverified listing</span>}
-                </div>
-              </div>
-            </Link>
-          ))}
+        <div className="space-y-4">
+          {/* Social Space Discovery Filter Bar */}
+          <div className="mt-4 space-y-2.5">
+            <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+              {['All', 'Rooftop', 'Lounge', 'Gallery', 'Beach spot', 'Co-working café'].map((type) => {
+                const active = (type === 'All' && !spaceType) || spaceType === type;
+                return (
+                  <Chip
+                    key={type}
+                    active={active}
+                    onClick={() => setSpaceType(type === 'All' ? null : active ? null : type)}
+                  >
+                    {type}
+                  </Chip>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="muted font-medium">Crowd Level:</span>
+              {(['All', 'Quiet', 'Moderate', 'Busy'] as const).map((c) => {
+                const active = (c === 'All' && !crowdFilter) || crowdFilter === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCrowdFilter(c === 'All' ? null : active ? null : c)}
+                    className={`rounded-full px-2.5 py-0.5 font-medium transition ${
+                      active
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                        : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-midnight-900 dark:text-slate-300'
+                    }`}
+                  >
+                    {c === 'Quiet' ? 'Quiet (Focused)' : c === 'Moderate' ? 'Moderate (Vibrant)' : c === 'Busy' ? 'Busy (Packed)' : 'All'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {spaceList.length === 0 ? (
+            <EmptyState icon="storefront" title="No spaces found" text="Try another space type, crowd filter, or search keyword." />
+          ) : (
+            <div className="mt-2 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {spaceList.map((s) => (
+                <Link
+                  key={s.id}
+                  to={`/space/${s.id}`}
+                  className="surface group overflow-hidden rounded-2xl shadow-card transition hover:-translate-y-0.5 hover:shadow-float"
+                >
+                  <div className="relative h-44 overflow-hidden">
+                    <Cover gradient={s.image} className="h-full w-full" label={s.name} />
+                    <span className="absolute left-3 top-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-xs">
+                      From {naira(s.bookingFrom)}
+                    </span>
+                    <div className="absolute right-3 top-3 flex items-center gap-1.5">
+                      <span className="rounded-lg bg-slate-900/80 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-md">
+                        {s.crowd}
+                      </span>
+                      <span className="rounded-lg bg-brand-500/90 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-md">
+                        {s.type}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="truncate text-base font-semibold text-slate-900 dark:text-white">{s.name}</h3>
+                      <Stars value={s.rating} />
+                    </div>
+                    <p className="muted text-xs">{s.area}, {s.city} · {s.hours}</p>
+
+                    {/* Social Space Amenity Tags */}
+                    {s.amenities && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {s.amenities.slice(0, 3).map((a) => (
+                          <span
+                            key={a}
+                            className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-midnight-800 dark:text-slate-300"
+                          >
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+                      <div>
+                        {s.verified ? <VerifiedBadge /> : <span className="muted text-xs">Unverified listing</span>}
+                      </div>
+                      <span className="text-[11px] font-medium text-brand-600 hover:underline dark:text-brand-400">
+                        View Space &rarr;
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

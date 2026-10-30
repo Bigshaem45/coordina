@@ -34,6 +34,7 @@ const Organiser = lazy(() => import('./features/organiser/Organiser'));
 const Admin = lazy(() => import('./features/admin/Admin'));
 const DesignSystem = lazy(() => import('./design-system/Showcase'));
 const Team = lazy(() => import('./features/team/Team'));
+const VenuePortal = lazy(() => import('./features/venue/VenuePortal'));
 const SquadList = lazy(() => import('./features/squad/Squad').then((m) => ({ default: m.SquadList })));
 const SquadDetail = lazy(() => import('./features/squad/Squad').then((m) => ({ default: m.SquadDetail })));
 
@@ -48,6 +49,8 @@ export default function App() {
             <Route path="/auth" element={<Auth />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/team" element={<Team />} />
+            <Route path="/venue-portal/:token" element={<VenuePortal />} />
+            <Route path="/venue-portal" element={<VenuePortal />} />
             <Route element={<Layout />}>
               <Route path="home" element={<Home />} />
               <Route path="discover" element={<Discover />} />

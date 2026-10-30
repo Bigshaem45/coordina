@@ -7,9 +7,11 @@ import { Badge, Button, Card, Chip, Cover, EmptyState } from '../../design-syste
 import { useAllEvents, useStore } from '../../store';
 import { fmtDate, fmtTime, naira, computeOrganiserPostingFee, FREE_EVENT_RATE_PER_100 } from '../../lib/format';
 import { toast } from '../../lib/fx';
-import type { Category, CEvent, Vibe } from '../../types';
+import type { Category, CEvent, Vibe, EventVerificationRecord } from '../../types';
+import { VerificationBadge } from '../../design-system/VerificationBadge';
+import { calculateRiskAssessment } from '../../lib/verification';
 
-type Tab = 'Dashboard' | 'Create' | 'Scanner' | 'Payouts';
+type Tab = 'Dashboard' | 'Create' | 'Verification' | 'Scanner' | 'Payouts';
 
 const sales = Array.from({ length: 14 }, (_, i) => ({
   day: `D${i + 1}`,
@@ -38,7 +40,7 @@ export default function Organiser() {
       </div>
 
       <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
-        {(['Dashboard', 'Create', 'Scanner', 'Payouts'] as Tab[]).map((t) => (
+        {(['Dashboard', 'Create', 'Verification', 'Scanner', 'Payouts'] as Tab[]).map((t) => (
           <Chip key={t} active={tab === t} onClick={() => setTab(t)}>
             {t}
           </Chip>
@@ -50,6 +52,8 @@ export default function Organiser() {
           <Dashboard />
         ) : tab === 'Create' ? (
           <Create onDone={() => setTab('Dashboard')} />
+        ) : tab === 'Verification' ? (
+          <OrganizerVerificationPortal />
         ) : tab === 'Scanner' ? (
           <Scanner />
         ) : (
@@ -621,6 +625,283 @@ function Payouts() {
       </Card>
 
       <EmptyState icon="account_balance" title="Need to update your settlement bank?" text="Manage verified Nigerian corporate or personal payout accounts in account settings." />
+    </div>
+  );
+}
+
+function OrganizerVerificationPortal() {
+  const verifications = useStore((s) => s.verifications);
+  const submitForVerification = useStore((s) => s.submitForVerification);
+  const mine = useAllEvents().filter((e) => e.organiserId === 'o1');
+  const [selectedEventId, setSelectedEventId] = useState(mine[0]?.id ?? '');
+  const [cac, setCac] = useState('RC-1849204');
+  const [director, setDirector] = useState('Babatunde Adeyemi');
+  const [nin, setNin] = useState('NIN-8910248192');
+  const [phone, setPhone] = useState('+234 803 555 1234');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(true);
+  const [venueEmail, setVenueEmail] = useState('manager@venue.ng');
+  const [venuePhone, setVenuePhone] = useState('+234 812 345 6789');
+
+  const selectedEvent = mine.find((e) => e.id === selectedEventId) ?? mine[0];
+  const activeVerifications = verifications.filter((v) => v.organizerId === 'o1');
+
+  // Compute live risk assessment preview
+  const liveRisk = calculateRiskAssessment({
+    isNewOrganizer: false,
+    hasCacNumber: cac.trim().length > 3,
+    isBvnNinVerified: nin.trim().length > 5,
+    isVenueConfirmed: false,
+    maxTicketPrice: selectedEvent ? Math.max(...selectedEvent.tiers.map((t) => t.price)) : 10000,
+    startDate: selectedEvent ? selectedEvent.start : new Date().toISOString(),
+    hasFlyer: true,
+    hasVenueAgreement: true,
+    organizerTrustScore: 4.8,
+  });
+
+  const handleSubmitVerification = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEvent) return;
+
+    const token = 'tok_' + Math.random().toString(36).slice(2, 10);
+    const id = 'vr-' + Date.now();
+
+    const record: EventVerificationRecord = {
+      id,
+      eventId: selectedEvent.id,
+      eventTitle: selectedEvent.title,
+      category: selectedEvent.category,
+      city: selectedEvent.city,
+      area: selectedEvent.area,
+      venueId: selectedEvent.spaceId,
+      venueName: spaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
+      organizerId: 'o1',
+      organizerName: 'Afro Nation Collective',
+      organizerIdentity: {
+        cacNumber: cac.trim(),
+        bvnNinVerified: true,
+        phoneOtpVerified: true,
+        directorName: director.trim(),
+      },
+      documents: [
+        {
+          id: 'doc-' + Date.now(),
+          name: `${selectedEvent.title} Official Flyer & Lineup.pdf`,
+          type: 'Event Flyer & Lineup',
+          url: selectedEvent.image,
+          uploadedAt: new Date().toISOString(),
+          verified: true,
+        },
+        {
+          id: 'doc-cac-' + Date.now(),
+          name: 'CAC Corporate Certificate.pdf',
+          type: 'CAC Certificate',
+          url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80',
+          uploadedAt: new Date().toISOString(),
+          verified: true,
+        },
+      ],
+      venueConfirmation: {
+        id: 'vc-' + Date.now(),
+        venueId: selectedEvent.spaceId,
+        venueName: spaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
+        contactEmail: venueEmail.trim(),
+        contactPhone: venuePhone.trim(),
+        token,
+        status: 'Pending',
+        requestedAt: new Date().toISOString(),
+        notes: 'Awaiting venue manager confirmation response via Termii / Email token link.',
+      },
+      riskAssessment: liveRisk,
+      status: 'Verification Pending',
+      submittedAt: new Date().toISOString(),
+    };
+
+    submitForVerification(record);
+    toast('Event submitted for remote verification! Venue confirmation email sent.');
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      {/* Active Verification Status Header */}
+      <Card className="border-l-4 border-l-brand-500 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-500">
+              Organizer Verification Status
+            </span>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Afro Nation Collective</h2>
+            <p className="muted mt-0.5 text-xs">
+              CAC: <strong className="text-slate-800 dark:text-slate-200">RC-1849204</strong> · Director:{' '}
+              <strong className="text-slate-800 dark:text-slate-200">Babatunde Adeyemi</strong> · Level 3 KYC
+            </p>
+          </div>
+          <VerificationBadge status="Organizer Verified" size="md" />
+        </div>
+      </Card>
+
+      {/* Your Submitted Events Verification Queue */}
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Submitted Event Verifications</h3>
+        <p className="muted text-xs">Events with verified badges receive 4.2x higher ticket sales and lower chargebacks.</p>
+
+        <div className="mt-3 space-y-3">
+          {activeVerifications.map((v) => (
+            <Card key={v.id} className="p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-semibold text-slate-900 dark:text-white">{v.eventTitle}</h4>
+                    <VerificationBadge status={v.status} size="sm" />
+                  </div>
+                  <p className="muted mt-0.5 text-xs">
+                    Venue: {v.venueName} · Risk Score: <strong>{v.riskAssessment.score}/100 ({v.riskAssessment.level})</strong>
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
+                    Venue Confirmation:{' '}
+                    <strong className={v.venueConfirmation.status === 'Confirmed' ? 'text-emerald-600' : 'text-amber-600'}>
+                      {v.venueConfirmation.status}
+                    </strong>
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    to={`/venue-portal/${v.venueConfirmation.token}`}
+                    target="_blank"
+                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
+                  >
+                    <Icon name="link" className="text-xs" />
+                    Open Venue Confirmation Link
+                  </Link>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Submit New Event for Verification */}
+      <Card className="space-y-4 p-6">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">Apply for Remote Event Verification</h3>
+          <p className="muted mt-0.5 text-xs">
+            Verify your event without physical attendance using automated CAC cross-checks, Termii OTP, and venue confirmation tokens.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmitVerification} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Select Event to Verify</label>
+            <select
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+              className={inputCls}
+            >
+              {mine.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.title} ({e.area}, {e.city})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">CAC Registration (RC)</label>
+              <input
+                type="text"
+                value={cac}
+                onChange={(e) => setCac(e.target.value)}
+                placeholder="e.g. RC-1849204"
+                className={inputCls}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Director Name</label>
+              <input
+                type="text"
+                value={director}
+                onChange={(e) => setDirector(e.target.value)}
+                placeholder="Director Full Name"
+                className={inputCls}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Director NIN / BVN</label>
+              <input
+                type="text"
+                value={nin}
+                onChange={(e) => setNin(e.target.value)}
+                placeholder="NIN or BVN"
+                className={inputCls}
+                required
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                Venue Manager Email (for Confirmation Token)
+              </label>
+              <input
+                type="email"
+                value={venueEmail}
+                onChange={(e) => setVenueEmail(e.target.value)}
+                placeholder="manager@venue.ng"
+                className={inputCls}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                Venue Manager Phone
+              </label>
+              <input
+                type="tel"
+                value={venuePhone}
+                onChange={(e) => setVenuePhone(e.target.value)}
+                placeholder="+234 812 345 6789"
+                className={inputCls}
+                required
+              />
+            </div>
+          </div>
+
+          {/* Live Risk Engine Assessment Score Preview */}
+          <div className="rounded-2xl border border-brand-500/30 bg-brand-500/5 p-4 dark:bg-brand-500/10">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                  Automated Risk Engine Score: {liveRisk.score}/100 ({liveRisk.level} Risk)
+                </p>
+                <p className="muted text-[11px] mt-0.5">
+                  Submissions with Low Risk (&le; 30) are eligible for fast-track verification once the venue confirms.
+                </p>
+              </div>
+              <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                Fast-Track Eligible
+              </span>
+            </div>
+
+            <ul className="mt-2.5 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+              {liveRisk.reasons.map((r, i) => (
+                <li key={i} className="flex items-center gap-1.5">
+                  <Icon name="check_circle" className="text-xs text-brand-500" />
+                  <span>{r}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <Button full size="lg" type="submit">
+            Submit for Remote Verification
+          </Button>
+        </form>
+      </Card>
     </div>
   );
 }

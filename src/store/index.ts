@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CEvent, Ticket, Vibe, Category, City } from '../types';
-import { events as seedEvents } from '../data/mock';
+import type { CEvent, Ticket, Vibe, Category, City, EventVerificationRecord, AuditLog, VerificationStatus } from '../types';
+import { events as seedEvents, initialVerifications, initialAuditLogs } from '../data/mock';
 import type { PlanItem } from '../lib/clash';
 
 export interface CartLine { eventId: string; tierId: string; qty: number }
@@ -28,6 +28,7 @@ interface State {
   customEvents: CEvent[]; squads: Squad[]; bookings: Booking[];
   savedCard: string | null; reports: { id: string; target: string; reason: string }[];
   admin: AdminItem[]; flags: FraudFlag[]; checkedIn: Record<string, number>;
+  verifications: EventVerificationRecord[]; auditLogs: AuditLog[];
   cartOpen: boolean; swapNotice: string | null;
 
   finishOnboarding: (p: { city: City; interests: Category[]; budget: number; vibe: Vibe }) => void;
@@ -45,6 +46,9 @@ interface State {
   addBooking: (b: Omit<Booking, 'id' | 'status'>) => void;
   report: (target: string, reason: string) => void;
   adminDecide: (id: string, s: 'approved' | 'rejected') => void; resolveFlag: (id: string) => void;
+  adminReviewVerification: (id: string, status: VerificationStatus, reviewerNotes?: string) => void;
+  confirmVenueBooking: (token: string, confirmed: boolean, notes?: string) => boolean;
+  submitForVerification: (rec: EventVerificationRecord) => void;
   checkIn: (eventId: string) => void;
 }
 
@@ -74,6 +78,8 @@ export const useStore = create<State>()(
       theme: 'light', lowData: false,
       cart: [], tickets: [], orders: [], customEvents: [], squads: [], bookings: [],
       savedCard: null, reports: [], checkedIn: {}, cartOpen: false, swapNotice: null,
+      verifications: initialVerifications,
+      auditLogs: initialAuditLogs,
       admin: [
         { id: 'a1', kind: 'Venue', name: 'Skyline Terrace, Lekki', by: 'Ope Adeyemi', status: 'pending' },
         { id: 'a2', kind: 'Event', name: 'Mega Detty December Preview', by: 'Unknown Promos', status: 'pending' },
@@ -140,6 +146,87 @@ export const useStore = create<State>()(
       report: (target, reason) => set((s) => ({ reports: [{ id: uid(), target, reason }, ...s.reports] })),
       adminDecide: (id, status) => set((s) => ({ admin: s.admin.map((a) => (a.id === id ? { ...a, status } : a)) })),
       resolveFlag: (id) => set((s) => ({ flags: s.flags.map((f) => (f.id === id ? { ...f, resolved: true } : f)) })),
+      submitForVerification: (rec) =>
+        set((s) => ({
+          verifications: [rec, ...s.verifications.filter((v) => v.id !== rec.id)],
+          auditLogs: [
+            {
+              id: 'log-' + uid(),
+              timestamp: new Date().toISOString(),
+              actor: rec.organizerName,
+              action: 'Submission Created',
+              targetId: rec.id,
+              targetType: 'Event',
+              details: `Organizer submitted "${rec.eventTitle}" for verification with ${rec.documents.length} document(s).`,
+            },
+            ...s.auditLogs,
+          ],
+        })),
+      adminReviewVerification: (id, status, reviewerNotes) =>
+        set((s) => {
+          const rec = s.verifications.find((v) => v.id === id);
+          const title = rec?.eventTitle ?? id;
+          return {
+            verifications: s.verifications.map((v) =>
+              v.id === id
+                ? { ...v, status, reviewedAt: new Date().toISOString(), reviewerNotes: reviewerNotes ?? v.reviewerNotes }
+                : v,
+            ),
+            customEvents: s.customEvents.map((e) => (e.id === rec?.eventId ? { ...e, verificationStatus: status } : e)),
+            auditLogs: [
+              {
+                id: 'log-' + uid(),
+                timestamp: new Date().toISOString(),
+                actor: 'Verification Officer (Compliance)',
+                action: status,
+                targetId: id,
+                targetType: 'Event',
+                details: `Officer reviewed "${title}": Status changed to ${status}. ${reviewerNotes ? `Notes: ${reviewerNotes}` : ''}`,
+              },
+              ...s.auditLogs,
+            ],
+          };
+        }),
+      confirmVenueBooking: (token, confirmed, notes) => {
+        let matched = false;
+        set((s) => {
+          const target = s.verifications.find((v) => v.venueConfirmation.token === token);
+          if (!target) return s;
+          matched = true;
+          const newStatus = confirmed ? 'Venue Confirmed' : 'Verification Rejected';
+          return {
+            verifications: s.verifications.map((v) =>
+              v.venueConfirmation.token === token
+                ? {
+                    ...v,
+                    status: newStatus,
+                    venueConfirmation: {
+                      ...v.venueConfirmation,
+                      status: confirmed ? 'Confirmed' : 'Declined',
+                      respondedAt: new Date().toISOString(),
+                      notes: notes ?? (confirmed ? 'Confirmed by Venue Representative' : 'Declined by Venue Representative'),
+                    },
+                  }
+                : v,
+            ),
+            auditLogs: [
+              {
+                id: 'log-' + uid(),
+                timestamp: new Date().toISOString(),
+                actor: target.venueConfirmation.venueName + ' (Venue Rep)',
+                action: confirmed ? 'Venue Confirmed' : 'Venue Declined',
+                targetId: target.id,
+                targetType: 'Venue',
+                details: confirmed
+                  ? `Venue representative confirmed booking for "${target.eventTitle}".`
+                  : `Venue representative declined/rejected booking for "${target.eventTitle}". Notes: ${notes ?? 'None'}`,
+              },
+              ...s.auditLogs,
+            ],
+          };
+        });
+        return matched;
+      },
       checkIn: (eventId) => set((s) => ({ checkedIn: { ...s.checkedIn, [eventId]: (s.checkedIn[eventId] ?? 0) + 1 } })),
     }),
     { name: 'cho-store' },

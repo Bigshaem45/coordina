@@ -91,6 +91,48 @@ export default function SpaceProfile() {
             </Card>
           </div>
 
+          {/* Social Space Amenities & Discovery Highlights */}
+          <Card className="space-y-4 p-5">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Space Highlights &amp; Amenities</h2>
+            {sp.amenities && sp.amenities.length > 0 && (
+              <div>
+                <p className="muted mb-2 text-xs font-medium uppercase tracking-wider">Features</p>
+                <div className="flex flex-wrap gap-2">
+                  {sp.amenities.map((a) => (
+                    <span
+                      key={a}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-slate-800 dark:bg-midnight-900 dark:text-slate-300"
+                    >
+                      <Icon name="check_circle" className="text-sm text-neon-500" />
+                      <span>{a}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-3 pt-2 sm:grid-cols-3 text-xs">
+              {sp.dressCode && (
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-midnight-950">
+                  <p className="muted text-[11px]">Dress Code</p>
+                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.dressCode}</p>
+                </div>
+              )}
+              {sp.capacity && (
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-midnight-950">
+                  <p className="muted text-[11px]">Max Capacity</p>
+                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.capacity} Guests</p>
+                </div>
+              )}
+              {sp.bestFor && (
+                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-midnight-950">
+                  <p className="muted text-[11px]">Best For</p>
+                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.bestFor.join(', ')}</p>
+                </div>
+              )}
+            </div>
+          </Card>
+
           <div>
             <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-white">Guest Reviews</h2>
             <div className="space-y-2.5">

@@ -1,93 +1,300 @@
 import { useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Icon } from '../../design-system/Icon';
-import { Badge, Button, Card, Chip, EmptyState } from '../../design-system/ui';
+import { Badge, Button, Card, Chip } from '../../design-system/ui';
+import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { useStore } from '../../store';
+import { toast } from '../../lib/fx';
+import type { EventVerificationRecord, VerificationStatus } from '../../types';
 
-type AdminTab = 'Verification' | 'Fraud' | 'Reports' | 'Analytics';
+type AdminTab = 'Verification Desk' | 'Risk Engine' | 'Audit Logs' | 'Fraud & Alerts' | 'Analytics';
 
 export default function Admin() {
-  const admin = useStore((s) => s.admin);
+  const verifications = useStore((s) => s.verifications);
+  const auditLogs = useStore((s) => s.auditLogs);
   const flags = useStore((s) => s.flags);
-  const reports = useStore((s) => s.reports);
-  const decide = useStore((s) => s.adminDecide);
+  const reviewVerification = useStore((s) => s.adminReviewVerification);
   const resolve = useStore((s) => s.resolveFlag);
-  const [tab, setTab] = useState<AdminTab>('Verification');
+  const [tab, setTab] = useState<AdminTab>('Verification Desk');
+  const [selectedRecord, setSelectedRecord] = useState<EventVerificationRecord | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  const pendingCount = admin.filter((a) => a.status === 'pending').length;
-  const openFlags = flags.filter((f) => !f.resolved).length;
+  const pendingCount = verifications.filter((v) => v.status === 'Verification Pending').length;
+  const highRiskCount = verifications.filter((v) => v.riskAssessment.level === 'High').length;
+  const verifiedCount = verifications.filter((v) => v.status === 'Event Verified' || v.status === 'Venue Confirmed').length;
+
+  const filteredVerifications = verifications.filter((v) => {
+    if (filterStatus === 'all') return true;
+    return v.status === filterStatus;
+  });
+
+  const handleDecision = (id: string, status: VerificationStatus) => {
+    reviewVerification(id, status, reviewNote.trim() || undefined);
+    toast(`Verification updated: ${status}`);
+    setSelectedRecord(null);
+    setReviewNote('');
+  };
 
   return (
     <div className="px-4 py-6 md:px-0">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Admin Console</h1>
-        <p className="muted mt-0.5 text-sm">Verify venues and organisers, review fraud signals, and moderate user reports.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Verification &amp; Compliance Console</h1>
+          <p className="muted mt-0.5 text-sm">
+            Remote verification desk for event organizers, venue bookings, rule-based fraud scoring, and audit monitoring.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone="brand">Compliance Desk · Abuja/Lagos</Badge>
+        </div>
       </div>
 
-      {/* Event Portal style KPI strip */}
+      {/* KPI Overview Strip */}
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border-l-4 border-l-brand-500 p-4">
+        <Card className="border-l-4 border-l-amber-500 p-4">
           <p className="muted text-xs">Pending Reviews</p>
           <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{pendingCount}</p>
+          <span className="text-[10px] text-amber-600 dark:text-amber-400">Needs officer review</span>
         </Card>
-        <Card className="border-l-4 border-l-coral-500 p-4">
-          <p className="muted text-xs">Open Fraud Alerts</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{openFlags}</p>
+        <Card className="border-l-4 border-l-rose-500 p-4">
+          <p className="muted text-xs">High Risk Submissions</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{highRiskCount}</p>
+          <span className="text-[10px] text-rose-600 dark:text-rose-400">Risk score &gt; 65/100</span>
         </Card>
-        <Card className="border-l-4 border-l-amber-500 p-4">
-          <p className="muted text-xs">User Reports</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{reports.length}</p>
+        <Card className="border-l-4 border-l-emerald-500 p-4">
+          <p className="muted text-xs">Verified Live Events</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{verifiedCount}</p>
+          <span className="text-[10px] text-emerald-600 dark:text-emerald-400">Venue &amp; CAC Confirmed</span>
         </Card>
-        <Card className="border-l-4 border-l-neon-500 p-4">
-          <p className="muted text-xs">Weekly GMV</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">₦70m</p>
+        <Card className="border-l-4 border-l-brand-500 p-4">
+          <p className="muted text-xs">Audit Logs Logged</p>
+          <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{auditLogs.length}</p>
+          <span className="text-[10px] text-brand-600 dark:text-brand-400">Immutable trail</span>
         </Card>
       </div>
 
+      {/* Navigation Tabs */}
       <div className="no-scrollbar mt-5 flex gap-2 overflow-x-auto pb-1">
-        {(['Verification', 'Fraud', 'Reports', 'Analytics'] as const).map((t) => (
+        {(['Verification Desk', 'Risk Engine', 'Audit Logs', 'Fraud & Alerts', 'Analytics'] as AdminTab[]).map((t) => (
           <Chip key={t} active={tab === t} onClick={() => setTab(t)}>
             {t}
           </Chip>
         ))}
       </div>
 
-      <div className="mt-4 space-y-3">
-        {tab === 'Verification' &&
-          admin.map((a) => (
-            <Card key={a.id} className="flex flex-wrap items-center justify-between gap-4 p-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
-                  <Icon name={a.kind === 'Venue' ? 'storefront' : 'event'} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">{a.name}</h3>
-                  <p className="muted text-xs">
-                    {a.kind.toUpperCase()} · submitted by {a.by}
-                  </p>
-                </div>
-              </div>
+      {/* 1. Verification Desk */}
+      {tab === 'Verification Desk' && (
+        <div className="mt-4 space-y-4">
+          {/* Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="muted font-medium">Filter Status:</span>
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'Verification Pending', label: 'Pending' },
+              { id: 'Event Verified', label: 'Event Verified' },
+              { id: 'Venue Confirmed', label: 'Venue Confirmed' },
+              { id: 'Event Suspended', label: 'Suspended' },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFilterStatus(f.id)}
+                className={`rounded-full px-3 py-1 font-medium transition ${
+                  filterStatus === f.id
+                    ? 'bg-brand-500 text-white'
+                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-              <div className="flex items-center gap-2">
-                <Badge tone={a.status === 'approved' ? 'neon' : a.status === 'rejected' ? 'coral' : 'brand'}>
-                  {a.status}
-                </Badge>
-                {a.status === 'pending' && (
-                  <>
-                    <Button size="sm" onClick={() => decide(a.id, 'approved')}>
-                      Approve
+          <div className="space-y-3">
+            {filteredVerifications.map((v) => (
+              <Card key={v.id} className="p-4 transition hover:border-brand-400">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
+                      <Icon name="verified_user" className="text-xl" />
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-slate-900 dark:text-slate-100">{v.eventTitle}</h3>
+                        <VerificationBadge status={v.status} size="sm" />
+                        <span
+                          className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                            v.riskAssessment.level === 'Low'
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                              : v.riskAssessment.level === 'Medium'
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                              : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                          }`}
+                        >
+                          Risk: {v.riskAssessment.score}/100 ({v.riskAssessment.level})
+                        </span>
+                      </div>
+                      <p className="muted mt-1 text-xs">
+                        Organizer: <strong className="text-slate-800 dark:text-slate-200">{v.organizerName}</strong> · Venue:{' '}
+                        <strong className="text-slate-800 dark:text-slate-200">{v.venueName}</strong> ({v.area}, {v.city})
+                      </p>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px]">
+                        <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                          <Icon name="badge" className="text-xs text-brand-500" />
+                          CAC: {v.organizerIdentity.cacNumber}
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                          <Icon name="storefront" className="text-xs text-neon-500" />
+                          Venue:{' '}
+                          <span
+                            className={
+                              v.venueConfirmation.status === 'Confirmed'
+                                ? 'font-semibold text-emerald-600 dark:text-emerald-400'
+                                : v.venueConfirmation.status === 'Declined'
+                                ? 'font-semibold text-rose-600 dark:text-rose-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                            }
+                          >
+                            {v.venueConfirmation.status}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                          <Icon name="description" className="text-xs text-slate-400" />
+                          {v.documents.length} verified doc(s)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setSelectedRecord(v)}>
+                      Inspect Dossier
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => decide(a.id, 'rejected')}>
-                      Reject
-                    </Button>
-                  </>
+                  </div>
+                </div>
+
+                {v.reviewerNotes && (
+                  <div className="mt-3 rounded-xl bg-slate-50 p-2.5 text-[11px] text-slate-600 dark:bg-midnight-950 dark:text-slate-300">
+                    <strong>Officer Notes:</strong> {v.reviewerNotes}
+                  </div>
                 )}
-              </div>
-            </Card>
-          ))}
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
 
-        {tab === 'Fraud' &&
-          flags.map((f) => (
+      {/* 2. Rule-Based Risk Engine Visualizer */}
+      {tab === 'Risk Engine' && (
+        <div className="mt-4 space-y-4">
+          <Card className="p-5">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Automated Rule-Based Fraud Scoring Matrix
+            </h2>
+            <p className="muted mt-1 text-xs leading-relaxed">
+              COORDINA runs every submission through an automated risk evaluation engine before routing to human compliance
+              officers. Submissions above 65 risk score trigger freeze holds and direct venue manager outreach.
+            </p>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-xs">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+                  <Icon name="domain_verification" className="text-brand-500 text-lg" />
+                  <span>CAC &amp; Identity Check (+30 pts)</span>
+                </div>
+                <p className="muted mt-1.5 leading-relaxed">
+                  Checks Corporate Affairs Commission database for registered enterprise status, director NIN, and phone OTP match.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+                  <Icon name="storefront" className="text-neon-500 text-lg" />
+                  <span>Venue Direct Confirmation (+25 pts)</span>
+                </div>
+                <p className="muted mt-1.5 leading-relaxed">
+                  Sends an encrypted confirmation token to venue management. If unconfirmed or declined, flags immediate risk.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+                  <Icon name="payments" className="text-amber-500 text-lg" />
+                  <span>High-Value Escrow Alert (+10 pts)</span>
+                </div>
+                <p className="muted mt-1.5 leading-relaxed">
+                  Events with VIP tables or ticket tiers &gt; ₦50,000 are subject to multi-day payout escrow holds until event ends.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+                  <Icon name="history_toggle_off" className="text-coral-500 text-lg" />
+                  <span>Short Notice Threshold (+15 pts)</span>
+                </div>
+                <p className="muted mt-1.5 leading-relaxed">
+                  Submissions created less than 72 hours before start date are flagged for urgent identity verification.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+                  <Icon name="person_add" className="text-blue-500 text-lg" />
+                  <span>First-Time Organizer (+15 pts)</span>
+                </div>
+                <p className="muted mt-1.5 leading-relaxed">
+                  Organizers with 0 prior completed events require manual document review and director proof of address.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+                  <Icon name="security" className="text-emerald-500 text-lg" />
+                  <span>Fast-Track Threshold (Score &le; 30)</span>
+                </div>
+                <p className="muted mt-1.5 leading-relaxed">
+                  Verified organizers booking verified venues with confirmed leases are auto-approved in sub-seconds.
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* 3. Audit & Monitoring Logs */}
+      {tab === 'Audit Logs' && (
+        <div className="mt-4 space-y-3">
+          <Card className="divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Immutable Verification Audit Trail
+            </div>
+            {auditLogs.map((log) => (
+              <div key={log.id} className="p-4 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      <Icon name="policy" className="text-sm" />
+                    </span>
+                    <strong className="text-slate-900 dark:text-white">{log.actor}</strong>
+                    <Badge tone={log.action.includes('Approved') || log.action.includes('Verified') ? 'neon' : log.action.includes('Suspended') ? 'coral' : 'brand'}>
+                      {log.action}
+                    </Badge>
+                  </div>
+                  <span className="muted font-mono">{new Date(log.timestamp).toLocaleString('en-NG')}</span>
+                </div>
+                <p className="mt-2 text-slate-700 dark:text-slate-300">{log.details}</p>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {/* 4. Fraud & Alerts */}
+      {tab === 'Fraud & Alerts' && (
+        <div className="mt-4 space-y-3">
+          {flags.map((f) => (
             <Card key={f.id} className={`p-4 transition-opacity ${f.resolved ? 'opacity-55' : ''}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -108,28 +315,16 @@ export default function Admin() {
               )}
             </Card>
           ))}
+        </div>
+      )}
 
-        {tab === 'Reports' &&
-          (reports.length === 0 ? (
-            <Card>
-              <EmptyState
-                icon="flag"
-                title="No user reports"
-                text="Listings flagged by attendees from event detail pages appear here for moderation."
-              />
-            </Card>
-          ) : (
-            reports.map((r) => (
-              <Card key={r.id} className="p-4">
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100">{r.target}</h3>
-                <p className="muted mt-1 text-sm">{r.reason}</p>
-              </Card>
-            ))
-          ))}
-
-        {tab === 'Analytics' && (
+      {/* 5. Analytics */}
+      {tab === 'Analytics' && (
+        <div className="mt-4 space-y-4">
           <Card className="p-5">
-            <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Platform Weekly GMV (₦ Millions)</h3>
+            <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
+              Platform Weekly GMV (₦ Millions)
+            </h3>
             <div className="h-60">
               <ResponsiveContainer>
                 <BarChart
@@ -147,8 +342,161 @@ export default function Admin() {
               </ResponsiveContainer>
             </div>
           </Card>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Dossier Review Inspector Modal */}
+      {selectedRecord && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setSelectedRecord(null)}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-midnight-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-slate-800">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-brand-500">
+                  Verification Dossier #{selectedRecord.id}
+                </span>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">{selectedRecord.eventTitle}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRecord(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+
+            {/* Risk Assessment Score Card */}
+            <div
+              className={`mt-4 rounded-2xl border p-4 ${
+                selectedRecord.riskAssessment.level === 'Low'
+                  ? 'border-emerald-500/30 bg-emerald-500/10'
+                  : selectedRecord.riskAssessment.level === 'Medium'
+                  ? 'border-amber-500/30 bg-amber-500/10'
+                  : 'border-rose-500/30 bg-rose-500/10'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                    Risk Engine Score: {selectedRecord.riskAssessment.score}/100 ({selectedRecord.riskAssessment.level} Risk)
+                  </p>
+                  <p className="muted text-xs mt-0.5">Automated fraud flags and document cross-reference</p>
+                </div>
+                <VerificationBadge status={selectedRecord.status} size="md" />
+              </div>
+
+              <ul className="mt-3 space-y-1 text-xs">
+                {selectedRecord.riskAssessment.reasons.map((r, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-slate-700 dark:text-slate-300">
+                    <Icon name="info" className="text-sm shrink-0 text-slate-400 mt-0.5" />
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Organizer & Venue Details */}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 text-xs">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-midnight-950">
+                <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Icon name="business" className="text-brand-500" />
+                  Organizer Credentials
+                </p>
+                <div className="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
+                  <p>Organization: <strong>{selectedRecord.organizerName}</strong></p>
+                  <p>CAC Number: <strong>{selectedRecord.organizerIdentity.cacNumber}</strong></p>
+                  <p>Director: <strong>{selectedRecord.organizerIdentity.directorName}</strong></p>
+                  <p>Identity Verification: <strong className="text-emerald-600 dark:text-emerald-400">NIN/BVN Validated</strong></p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-midnight-950">
+                <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <Icon name="storefront" className="text-neon-500" />
+                  Venue Independent Status
+                </p>
+                <div className="mt-2 space-y-1 text-slate-600 dark:text-slate-300">
+                  <p>Venue: <strong>{selectedRecord.venueName}</strong></p>
+                  <p>Confirmation: <strong className="text-brand-600 dark:text-brand-400">{selectedRecord.venueConfirmation.status}</strong></p>
+                  <p>Contact: {selectedRecord.venueConfirmation.contactEmail}</p>
+                  <p className="truncate">Token: <span className="font-mono text-[10px]">{selectedRecord.venueConfirmation.token}</span></p>
+                </div>
+              </div>
+            </div>
+
+            {/* Attached Documents */}
+            <div className="mt-4">
+              <h4 className="text-xs font-semibold text-slate-900 dark:text-white">Uploaded Verification Evidence ({selectedRecord.documents.length})</h4>
+              <div className="mt-2 space-y-2">
+                {selectedRecord.documents.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-2.5 text-xs dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <Icon name="description" className="text-brand-500" />
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white">{d.name}</p>
+                        <p className="muted text-[10px]">{d.type} · Uploaded {new Date(d.uploadedAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <a
+                      href={d.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      <Icon name="open_in_new" className="text-xs" /> View Document
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Reviewer Note Input */}
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Officer Decision Notes</label>
+              <textarea
+                rows={2}
+                value={reviewNote}
+                onChange={(e) => setReviewNote(e.target.value)}
+                placeholder="Enter audit notes explaining approval, rejection, or required clarification..."
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-midnight-950 dark:text-slate-100"
+              />
+            </div>
+
+            {/* Action Bar */}
+            <div className="mt-5 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleDecision(selectedRecord.id, 'Verification Rejected')}
+              >
+                Reject Submission
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-amber-600 hover:bg-amber-50"
+                onClick={() => handleDecision(selectedRecord.id, 'Event Suspended')}
+              >
+                Suspend Event
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleDecision(selectedRecord.id, 'Event Verified')}
+              >
+                Approve (Event Verified)
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

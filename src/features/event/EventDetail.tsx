@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
 import { getEvent, getOrganiser, getSpace, CATEGORY_ICON } from '../../data/mock';
 import { Badge, BottomSheet, Button, Card, Cover, EmptyState, Stars, VerifiedBadge } from '../../design-system/ui';
+import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { useAllEvents, usePlanItems, useStore } from '../../store';
 import { detectClashes } from '../../lib/clash';
 import { fmtDate, fmtTime, mapLink, naira } from '../../lib/format';
@@ -87,6 +88,7 @@ export default function EventDetail() {
             <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white backdrop-blur-md">
               {event.vibe}
             </span>
+            <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />
           </div>
           <h1 className="mt-2.5 text-2xl font-bold leading-tight text-white sm:text-4xl">{event.title}</h1>
           <p className="mt-1 text-xs text-slate-200 sm:text-sm">
@@ -129,6 +131,46 @@ export default function EventDetail() {
               </div>
             </Card>
           </div>
+
+          {/* Trust & Remote Verification Passport */}
+          <Card className="border-l-4 border-l-emerald-500 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
+                  <Icon name="verified_user" className="text-lg" filled />
+                </span>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-white">Coordina Remote Verification</h3>
+                  <p className="muted text-[11px]">Independently audited against venue fraud & ghost lineups</p>
+                </div>
+              </div>
+              <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-3 text-[11px]">
+              <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
+                  <Icon name="domain" className="text-sm text-brand-500" />
+                  <span>Organizer CAC</span>
+                </div>
+                <p className="muted mt-0.5">Corporate Affairs Commission entity verified</p>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
+                  <Icon name="storefront" className="text-sm text-neon-500" />
+                  <span>Venue Booking</span>
+                </div>
+                <p className="muted mt-0.5">Direct manager confirmation & date lease match</p>
+              </div>
+              <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-midnight-900">
+                <div className="flex items-center gap-1 font-semibold text-slate-800 dark:text-slate-200">
+                  <Icon name="shield" className="text-sm text-amber-500" />
+                  <span>Risk Engine</span>
+                </div>
+                <p className="muted mt-0.5">Passed automated fraud score & escrow audit</p>
+              </div>
+            </div>
+          </Card>
 
           {/* Description */}
           <Card className="p-5">

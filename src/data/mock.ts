@@ -1,4 +1,4 @@
-import type { CEvent, Organiser, Space, Category } from '../types';
+import type { CEvent, Organiser, Space, Category, EventVerificationRecord, AuditLog } from '../types';
 
 export const CATEGORIES: Category[] = ['Concerts', 'Nightlife', 'Food', 'Faith', 'Tech', 'Art', 'Sports', 'Networking'];
 
@@ -150,9 +150,46 @@ function mkSpace(
   image: string, photos: string[], dLat: number, dLng: number,
 ): Space {
   const a = AREAS[area];
+
+  const amenitiesMap: Record<Space['type'], string[]> = {
+    Rooftop: ['Skyline View', 'Craft Cocktails', 'Valet Parking', 'Dual Backup Power', 'High-Speed Wi-Fi'],
+    Gallery: ['Curated Art Vault', 'Acoustic Treatment', 'Espresso Bar', 'Climate Control', 'Wheelchair Access'],
+    'Beach spot': ['Ocean Cabanas', 'Live Suya Grill', 'Beach Volleyball', 'Trained Lifeguards', 'Sunset Deck'],
+    'Co-working café': ['Fiber Wi-Fi (150 Mbps)', 'Private Call Booths', 'Continuous Power', 'Artisanal Brews', 'Ergonomic Seating'],
+    Lounge: ['VIP Table Service', 'Resident DJ Console', 'Secured Valet', 'Private Dining Room', 'CCTV Surveillance'],
+  };
+
+  const bestForMap: Record<Space['type'], string[]> = {
+    Rooftop: ['Sundowners', 'Date Night', 'Birthday Soirées'],
+    Gallery: ['Art Enthusiasts', 'Intimate Mixers', 'Weekend Inspiration'],
+    'Beach spot': ['Squad Escapes', 'Day Parties', 'Coastal Relaxation'],
+    'Co-working café': ['Remote Founders', 'Deep Work Sessions', 'Coffee Catch-ups'],
+    Lounge: ['Celebrations', 'Weekend Nightlife', 'Networking Drinks'],
+  };
+
+  const dressCodeMap: Record<Space['type'], string> = {
+    Rooftop: 'Smart Casual / Chic',
+    Gallery: 'Creative & Relaxed',
+    'Beach spot': 'Resort Wear / Beach Chic',
+    'Co-working café': 'Casual',
+    Lounge: 'Glamorous / Night Out',
+  };
+
+  const capacityMap: Record<Space['type'], number> = {
+    Rooftop: 350,
+    Gallery: 180,
+    'Beach spot': 650,
+    'Co-working café': 110,
+    Lounge: 420,
+  };
+
   return {
     id, name, type, area, city: a.city, lat: a.lat + dLat, lng: a.lng + dLng,
     verified, rating, hours, about, safety, crowd, bookingFrom, image, photos,
+    amenities: amenitiesMap[type],
+    bestFor: bestForMap[type],
+    dressCode: dressCodeMap[type],
+    capacity: capacityMap[type],
     reviews: [
       { who: 'Chioma A.', rating: 5, text: 'Great atmosphere, felt completely safe, and the team was attentive.' },
       { who: 'Tunde B.', rating: 4, text: 'Beautiful space. Reserve ahead on Fridays and Saturdays.' },
@@ -271,13 +308,269 @@ export const events: CEvent[] = raw.map((e, idx) => {
   const end = new Date(start.getTime() + e.dur * 3600_000);
   const offsetLat = ((idx % 5) - 2) * 0.0012;
   const offsetLng = (((idx * 3) % 5) - 2) * 0.0012;
+
+  // Distribute realistic verification statuses
+  const statusPool: CEvent['verificationStatus'][] = [
+    'Event Verified',
+    'Venue Confirmed',
+    'Event Verified',
+    'Organizer Verified',
+    'Event Verified',
+    'Venue Confirmed',
+    'Verification Pending',
+  ];
+  const verificationStatus = statusPool[idx % statusPool.length];
+
   return {
     id: e.id, title: e.t, category: e.c, vibe: e.v, city: a.city, area: e.area, spaceId: e.s, organiserId: e.o,
     start: start.toISOString(), end: end.toISOString(), image: e.img, description: e.desc,
     tiers: e.tiers.map((t, i) => ({ id: `${e.id}-t${i}`, name: t[0], price: t[1], remaining: t[2], total: t[3] })),
     lat: a.lat + offsetLat, lng: a.lng + offsetLng,
+    verificationStatus,
   };
 });
+
+export const initialVerifications: EventVerificationRecord[] = [
+  {
+    id: 'vr-101',
+    eventId: 'e1',
+    eventTitle: 'Afrobeats Night Live',
+    category: 'Concerts',
+    city: 'Lagos',
+    area: 'Lekki',
+    venueId: 's1',
+    venueName: 'Cloud 9 Rooftop',
+    organizerId: 'o1',
+    organizerName: 'Afro Nation Collective',
+    organizerIdentity: {
+      cacNumber: 'RC-1849204',
+      bvnNinVerified: true,
+      phoneOtpVerified: true,
+      directorName: 'Babatunde Adeyemi',
+    },
+    documents: [
+      { id: 'doc-1', name: 'CAC Incorporation Certificate.pdf', type: 'CAC Certificate', url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-10-24T10:00:00Z', verified: true },
+      { id: 'doc-2', name: 'Director NIN Slip.pdf', type: 'Director Government ID', url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-10-24T10:05:00Z', verified: true },
+      { id: 'doc-3', name: 'Cloud 9 Rooftop Booking Contract.pdf', type: 'Venue Booking Agreement', url: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-10-24T10:12:00Z', verified: true },
+    ],
+    venueConfirmation: {
+      id: 'vc-1',
+      venueId: 's1',
+      venueName: 'Cloud 9 Rooftop',
+      contactEmail: 'gm@cloud9rooftop.ng',
+      contactPhone: '+234 803 111 2233',
+      token: 'tok_cloud9_e1_9841',
+      status: 'Confirmed',
+      requestedAt: '2026-10-24T10:15:00Z',
+      respondedAt: '2026-10-24T12:30:00Z',
+      notes: 'Booking confirmed for Friday night. Hall deposit received.',
+    },
+    riskAssessment: {
+      score: 12,
+      level: 'Low',
+      reasons: [
+        'Organizer verified with valid CAC registration (RC-1849204) & Director identity',
+        'Venue representative independently confirmed reservation & date match',
+        'High historical organizer trust rating (4.8/5.0 with 1,240 reviews)',
+      ],
+      flags: {
+        newOrganizer: false,
+        highTicketValue: false,
+        unverifiedVenue: false,
+        shortNotice: false,
+        missingDocumentation: false,
+      },
+    },
+    status: 'Event Verified',
+    submittedAt: '2026-10-24T10:15:00Z',
+    reviewedAt: '2026-10-24T14:00:00Z',
+    reviewerNotes: 'Verified CAC with national registry. Venue confirmed directly. Approved for public listing.',
+  },
+  {
+    id: 'vr-102',
+    eventId: 'e2',
+    eventTitle: 'Rooftop Brunch & Beats',
+    category: 'Food',
+    city: 'Lagos',
+    area: 'Ikeja',
+    venueId: 's5',
+    venueName: 'The Terrace Bistro & Lounge',
+    organizerId: 'o2',
+    organizerName: 'Naija Eats Co.',
+    organizerIdentity: {
+      cacNumber: 'RC-1492019',
+      bvnNinVerified: true,
+      phoneOtpVerified: true,
+      directorName: 'Zainab Balogun',
+    },
+    documents: [
+      { id: 'doc-4', name: 'NaijaEats CAC Cert.pdf', type: 'CAC Certificate', url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-10-25T11:00:00Z', verified: true },
+      { id: 'doc-5', name: 'Terrace Bistro Invoice.pdf', type: 'Venue Booking Agreement', url: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-10-25T11:10:00Z', verified: true },
+    ],
+    venueConfirmation: {
+      id: 'vc-2',
+      venueId: 's5',
+      venueName: 'The Terrace Bistro & Lounge',
+      contactEmail: 'events@terracebistro.ng',
+      contactPhone: '+234 812 444 5566',
+      token: 'tok_terrace_e2_3312',
+      status: 'Confirmed',
+      requestedAt: '2026-10-25T11:15:00Z',
+      respondedAt: '2026-10-25T15:20:00Z',
+      notes: 'Saturday brunch slot confirmed for 10am to 1pm.',
+    },
+    riskAssessment: {
+      score: 18,
+      level: 'Low',
+      reasons: [
+        'Organizer verified with valid CAC registration & Director identity',
+        'Venue representative independently confirmed reservation & date match',
+      ],
+      flags: {
+        newOrganizer: false,
+        highTicketValue: false,
+        unverifiedVenue: false,
+        shortNotice: false,
+        missingDocumentation: false,
+      },
+    },
+    status: 'Venue Confirmed',
+    submittedAt: '2026-10-25T11:15:00Z',
+    reviewedAt: '2026-10-25T16:00:00Z',
+  },
+  {
+    id: 'vr-103',
+    eventId: 'e12',
+    eventTitle: 'Midnight Amapiano Room',
+    category: 'Nightlife',
+    city: 'Lagos',
+    area: 'Victoria Island',
+    venueId: 's7',
+    venueName: 'Landmark Centre VI',
+    organizerId: 'o1',
+    organizerName: 'Afro Nation Collective',
+    organizerIdentity: {
+      cacNumber: 'RC-1849204',
+      bvnNinVerified: true,
+      phoneOtpVerified: true,
+      directorName: 'Babatunde Adeyemi',
+    },
+    documents: [
+      { id: 'doc-6', name: 'Flyer & Guest DJ Lineup.png', type: 'Event Flyer & Lineup', url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80', uploadedAt: '2026-10-29T14:00:00Z', verified: true },
+    ],
+    venueConfirmation: {
+      id: 'vc-3',
+      venueId: 's7',
+      venueName: 'Landmark Centre VI',
+      contactEmail: 'bookings@landmarklagos.com',
+      contactPhone: '+234 802 999 8877',
+      token: 'tok_landmark_e12_4499',
+      status: 'Pending',
+      requestedAt: '2026-10-29T14:30:00Z',
+      notes: 'Awaiting venue manager confirmation response.',
+    },
+    riskAssessment: {
+      score: 42,
+      level: 'Medium',
+      reasons: [
+        'Organizer verified with valid CAC registration',
+        'Venue representative has not yet confirmed the booking reservation',
+        'No written venue lease/receipt or authorization agreement attached',
+      ],
+      flags: {
+        newOrganizer: false,
+        highTicketValue: false,
+        unverifiedVenue: true,
+        shortNotice: false,
+        missingDocumentation: true,
+      },
+    },
+    status: 'Verification Pending',
+    submittedAt: '2026-10-29T14:30:00Z',
+  },
+  {
+    id: 'vr-104',
+    eventId: 'e-susp',
+    eventTitle: 'Secret Mansion Rave on the Lagoon',
+    category: 'Nightlife',
+    city: 'Lagos',
+    area: 'Lekki',
+    venueId: 's1',
+    venueName: 'Cloud 9 Rooftop',
+    organizerId: 'o-susp',
+    organizerName: 'Unknown Promoters NG',
+    organizerIdentity: {
+      cacNumber: 'RC-UNREGISTERED',
+      bvnNinVerified: false,
+      phoneOtpVerified: true,
+      directorName: 'Anonymous Contact',
+    },
+    documents: [],
+    venueConfirmation: {
+      id: 'vc-4',
+      venueId: 's1',
+      venueName: 'Cloud 9 Rooftop',
+      contactEmail: 'manager@cloud9.ng',
+      contactPhone: '+234 803 111 2233',
+      token: 'tok_cloud9_susp_1122',
+      status: 'Declined',
+      requestedAt: '2026-10-28T09:00:00Z',
+      respondedAt: '2026-10-28T10:15:00Z',
+      notes: 'We have no record of this event or promoter booking our terrace. Possible scam.',
+    },
+    riskAssessment: {
+      score: 94,
+      level: 'High',
+      reasons: [
+        'Organizer missing Corporate Affairs Commission (CAC) or verified Director Identity',
+        'First-time event organizer on COORDINA platform',
+        'Venue representative declined reservation (Venue Manager stated no booking exists)',
+        'No written venue lease/receipt or authorization agreement attached',
+      ],
+      flags: {
+        newOrganizer: true,
+        highTicketValue: false,
+        unverifiedVenue: true,
+        shortNotice: false,
+        missingDocumentation: true,
+      },
+    },
+    status: 'Event Suspended',
+    submittedAt: '2026-10-28T09:00:00Z',
+    reviewedAt: '2026-10-28T10:30:00Z',
+    reviewerNotes: 'Venue confirmed fraudulent reservation claim. Event immediately suspended and payouts frozen.',
+  },
+];
+
+export const initialAuditLogs: AuditLog[] = [
+  {
+    id: 'log-1',
+    timestamp: '2026-10-28T10:30:00Z',
+    actor: 'Officer Hauwa Musa (Compliance)',
+    action: 'Event Suspended',
+    targetId: 'vr-104',
+    targetType: 'Event',
+    details: 'Suspended "Secret Mansion Rave" after Cloud 9 Rooftop management issued formal booking denial.',
+  },
+  {
+    id: 'log-2',
+    timestamp: '2026-10-25T16:00:00Z',
+    actor: 'Officer Emeka Obi (Verification)',
+    action: 'Venue Confirmed',
+    targetId: 'vr-102',
+    targetType: 'Venue',
+    details: 'Verified The Terrace Bistro & Lounge booking confirmation token response from events@terracebistro.ng.',
+  },
+  {
+    id: 'log-3',
+    timestamp: '2026-10-24T14:00:00Z',
+    actor: 'Officer Hauwa Musa (Compliance)',
+    action: 'Event Verified',
+    targetId: 'vr-101',
+    targetType: 'Event',
+    details: 'Approved Afro Nation Collective CAC registration RC-1849204 and Cloud 9 venue lease contract.',
+  },
+];
 
 export const getEvent = (id: string) => events.find((e) => e.id === id);
 export const getSpace = (id: string) => spaces.find((s) => s.id === id);
