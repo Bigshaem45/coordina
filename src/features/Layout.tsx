@@ -56,7 +56,7 @@ export function Layout() {
 
   return (
     <div
-      className={`min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)] ${
+      className={`flex min-h-screen w-full max-w-full flex-col overflow-x-hidden bg-[var(--bg)] text-[var(--text)] ${
         hasOwnBottomBar
           ? 'pb-[calc(6rem+env(safe-area-inset-bottom,0px))]'
           : 'pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-12'

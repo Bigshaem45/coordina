@@ -32,7 +32,7 @@ export default function Home() {
   const verified = spaces.filter((s) => s.city === city && s.verified);
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden pb-8 pt-4 md:pt-6">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden pb-8 pt-4 md:pt-6">
       {/* Top Bar (Mobile Logo + Location Switcher) */}
       <div className="flex w-full items-center justify-between px-4 md:px-0">
         <div className="md:hidden">

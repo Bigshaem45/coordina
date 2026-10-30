@@ -840,6 +840,41 @@ function OrganizerVerificationPortal() {
                 required
               />
             </div>
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Phone &amp; Termii OTP</label>
+                {otpVerified ? (
+                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">✓ Verified</span>
+                ) : otpSent ? (
+                  <button
+                    type="button"
+                    onClick={() => setOtpVerified(true)}
+                    className="text-[10px] font-semibold text-brand-500 hover:underline"
+                  >
+                    Enter 1234
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setOtpSent(true)}
+                    className="text-[10px] font-semibold text-brand-500 hover:underline"
+                  >
+                    Send OTP
+                  </button>
+                )}
+              </div>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  setOtpVerified(false);
+                }}
+                placeholder="+234 803 555 1234"
+                className={inputCls}
+                required
+              />
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">

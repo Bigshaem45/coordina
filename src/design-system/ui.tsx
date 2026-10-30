@@ -287,7 +287,7 @@ export function Toast({ message, onDone }: { message: string | null; onDone: () 
 
 export function Section({ title, subtitle, action, children }: { title: string; subtitle?: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="mt-8 w-full max-w-full overflow-hidden">
+    <section className="mt-8 w-full min-w-0 max-w-full overflow-hidden">
       <div className="mb-3.5 flex items-end justify-between gap-2 px-4 md:px-0">
         <div>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
