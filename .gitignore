@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Production build outputs
+dist/
+dist-ssr/
+build/
+
+# Android build outputs & Gradle cache
+android/app/build/
+android/build/
+android/.gradle/
+android/captures/
+android/.idea/
+android/*.iml
+android/app/*.iml
+local.properties
+.gradle/
+**/build/outputs/apk/
+*.apk
+*.aab
+!public/downloads/*.apk
+
+# Environment variables & credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.jks
+*.keystore
+
+# Editor & OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
