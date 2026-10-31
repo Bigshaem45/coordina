@@ -142,6 +142,9 @@ export default defineSchema({
     isFree: v.boolean(),
     expectedAttendance: v.number(),
     featured: v.boolean(),
+    rating: v.optional(v.number()),
+    reviewCount: v.optional(v.number()),
+    reportCount: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_city', ['city'])
@@ -336,5 +339,48 @@ export default defineSchema({
   })
     .index('by_userId', ['userId'])
     .index('by_read', ['read']),
+
+  // 15. Community Reports & Fraud Alerts
+  event_reports: defineTable({
+    eventId: v.id('events'),
+    eventTitle: v.string(),
+    reporterName: v.string(),
+    reporterEmail: v.optional(v.string()),
+    reason: v.union(
+      v.literal('fake_event'),
+      v.literal('venue_mismatch'),
+      v.literal('scalping'),
+      v.literal('inappropriate'),
+      v.literal('cancelled'),
+      v.literal('other')
+    ),
+    details: v.string(),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('reviewed'),
+      v.literal('dismissed'),
+      v.literal('action_taken')
+    ),
+    actionTaken: v.optional(v.string()),
+    reviewedBy: v.optional(v.string()),
+    reviewedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index('by_eventId', ['eventId'])
+    .index('by_status', ['status']),
+
+  // 16. Event Ratings & Attendee Reviews
+  event_ratings: defineTable({
+    eventId: v.id('events'),
+    userId: v.optional(v.id('users')),
+    userName: v.string(),
+    rating: v.number(), // 1 to 5 stars
+    tags: v.array(v.string()),
+    review: v.optional(v.string()),
+    ticketVerified: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index('by_eventId', ['eventId'])
+    .index('by_rating', ['rating']),
 });
 

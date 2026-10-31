@@ -11,6 +11,8 @@ import { toast } from '../../lib/fx';
 import { googleCalLink, openCalendarEvent, whatsappEvent, getEventShareUrl } from '../../lib/calendar';
 import { useAddToPlan, EventCard } from '../discover/EventCard';
 import { recommend } from '../../lib/recommend';
+import ReportModal from './ReportModal';
+import RatingModal from './RatingModal';
 
 export default function EventDetail() {
   const { id } = useParams();
@@ -21,11 +23,13 @@ export default function EventDetail() {
   const add = useAddToPlan();
   const plan = usePlanItems();
   const budget = useStore((s) => s.budget);
-  const report = useStore((s) => s.report);
   const [tierId, setTierId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
-  const [sheet, setSheet] = useState<null | 'share' | 'report'>(null);
-  const [reason, setReason] = useState('Fake or misleading listing');
+  const [sheet, setSheet] = useState<null | 'share'>(null);
+  const [ratingOpen, setRatingOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [ratingVal, setRatingVal] = useState<number>((event as any).rating ?? 4.9);
+  const [reviewCountVal, setReviewCountVal] = useState<number>((event as any).reviewCount ?? 84);
   const heroRef = useRef<HTMLDivElement>(null);
 
   if (!event) {
@@ -89,6 +93,16 @@ export default function EventDetail() {
             <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white backdrop-blur-md">
               {event.vibe}
             </span>
+            <button
+              type="button"
+              onClick={() => setRatingOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 px-3 py-1 text-xs font-semibold text-amber-300 backdrop-blur-md transition hover:bg-amber-400/30"
+              title="Click to rate event"
+            >
+              <Icon name="star" className="text-sm text-amber-400" filled />
+              <span>{ratingVal}</span>
+              <span className="opacity-80">({reviewCountVal})</span>
+            </button>
             <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />
           </div>
           <h1 className="mt-2.5 text-2xl font-bold leading-tight text-white sm:text-4xl">{event.title}</h1>
@@ -268,6 +282,89 @@ export default function EventDetail() {
             </div>
             <Stars value={org.trust} />
           </Card>
+
+          {/* Attendee Ratings & Community Reviews */}
+          <Card className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4 dark:border-slate-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">Attendee Ratings &amp; Reviews</h2>
+                  <Badge tone="neon">Verified Attendees</Badge>
+                </div>
+                <p className="muted text-xs mt-0.5">Community scores aggregated across verified ticket holders.</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setRatingOpen(true)}>
+                <Icon name="rate_review" className="text-sm" /> Rate Event
+              </Button>
+            </div>
+
+            {/* Score Overview */}
+            <div className="mt-4 flex flex-wrap items-center gap-5 rounded-2xl bg-slate-50/80 p-4 dark:bg-midnight-900">
+              <div className="text-center">
+                <span className="text-3xl font-extrabold text-slate-900 dark:text-white">{ratingVal}</span>
+                <div className="mt-1 flex justify-center text-amber-400">
+                  <Stars value={ratingVal} />
+                </div>
+                <p className="muted text-[11px] mt-0.5">{reviewCountVal} total reviews</p>
+              </div>
+
+              <div className="h-10 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+
+              <div className="flex-1 min-w-[200px]">
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">Crowd Sentiment</p>
+                <div className="flex flex-wrap gap-1.5 text-xs">
+                  <span className="rounded-lg bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                    🔥 94% Electric Vibe
+                  </span>
+                  <span className="rounded-lg bg-indigo-500/10 px-2 py-1 text-[11px] font-medium text-indigo-700 dark:text-indigo-300">
+                    🎵 91% Top Sound &amp; DJ
+                  </span>
+                  <span className="rounded-lg bg-brand-500/10 px-2 py-1 text-[11px] font-medium text-brand-700 dark:text-brand-300">
+                    🎟️ 98% Fast Gate Entry
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Verified Reviews Feed */}
+            <div className="mt-4 space-y-3 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+              <div className="pt-3 first:pt-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-slate-900 dark:text-white">Fatima Z.</span>
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      <Icon name="check_circle" className="text-[12px]" filled /> Pass Verified
+                    </span>
+                  </div>
+                  <span className="muted text-[10px]">2 days ago</span>
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-amber-400">
+                  <Stars value={5} />
+                </div>
+                <p className="mt-1 text-slate-600 dark:text-slate-300 leading-relaxed">
+                  The gate scanner checked our group ticket in 3 seconds. Sound setup and lighting were world-class!
+                </p>
+              </div>
+
+              <div className="pt-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-slate-900 dark:text-white">Chuka O.</span>
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      <Icon name="check_circle" className="text-[12px]" filled /> Pass Verified
+                    </span>
+                  </div>
+                  <span className="muted text-[10px]">5 days ago</span>
+                </div>
+                <div className="mt-1 flex items-center gap-1 text-amber-400">
+                  <Stars value={5} />
+                </div>
+                <p className="mt-1 text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Clean clash-free timing! We had plenty of buffer after our rooftop dinner in Abuja before heading in.
+                </p>
+              </div>
+            </div>
+          </Card>
         </div>
 
         {/* Right Column: Sticky Booking Summary + Venue Safety & Map */}
@@ -378,10 +475,10 @@ export default function EventDetail() {
 
             <button
               type="button"
-              className="muted inline-flex items-center gap-1.5 text-xs hover:underline"
-              onClick={() => setSheet('report')}
+              className="muted inline-flex items-center gap-1.5 text-xs hover:text-rose-600 dark:hover:text-rose-400"
+              onClick={() => setReportOpen(true)}
             >
-              <Icon name="flag" className="text-sm" /> Report this listing
+              <Icon name="flag" className="text-sm" /> Report this event listing
             </button>
           </div>
         </div>
@@ -468,36 +565,25 @@ export default function EventDetail() {
         </div>
       </BottomSheet>
 
-      {/* Report Sheet */}
-      <BottomSheet open={sheet === 'report'} onClose={() => setSheet(null)} title="Report Listing">
-        <div className="space-y-2">
-          {['Fake or misleading listing', 'Unsafe venue', 'Asked to pay outside COORDINA', 'Other'].map((r) => (
-            <label
-              key={r}
-              className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--border)] p-3 text-sm"
-            >
-              <input
-                type="radio"
-                className="h-4 w-4 accent-[#4F46E5]"
-                checked={reason === r}
-                onChange={() => setReason(r)}
-              />
-              <span>{r}</span>
-            </label>
-          ))}
-        </div>
-        <Button
-          full
-          className="mt-4"
-          onClick={() => {
-            report(event.title, reason);
-            setSheet(null);
-            toast('Report received. Our trust team will review it.');
-          }}
-        >
-          Submit Report
-        </Button>
-      </BottomSheet>
+      {/* Report Modal */}
+      <ReportModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        eventId={event.id}
+        eventTitle={event.title}
+      />
+
+      {/* Rating Modal */}
+      <RatingModal
+        open={ratingOpen}
+        onClose={() => setRatingOpen(false)}
+        eventId={event.id}
+        eventTitle={event.title}
+        onRatingSubmitted={(newStars) => {
+          setRatingVal(newStars);
+          setReviewCountVal((c) => c + 1);
+        }}
+      />
     </div>
   );
 }

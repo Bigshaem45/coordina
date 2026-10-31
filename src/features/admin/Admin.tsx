@@ -23,6 +23,40 @@ export default function Admin() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isSeeding, setIsSeeding] = useState(false);
 
+  const [communityReports, setCommunityReports] = useState([
+    {
+      id: 'rep-101',
+      eventTitle: 'Afrobeats Rooftop Festival 2026',
+      reason: 'Ticket Scalping / Extortion',
+      details: 'Unauthorized secondary broker demanding ₦35,000 for regular tickets outside official Paystack checkout.',
+      reporter: 'Tunde A. (tunde@example.ng)',
+      time: '45 mins ago',
+      status: 'pending',
+    },
+    {
+      id: 'rep-102',
+      eventTitle: 'Wuse Secret Gallery Vernissage',
+      reason: 'Venue Location Mismatch',
+      details: 'Venue manager on ground claims they have private maintenance scheduled and no event agreement.',
+      reporter: 'Fatima M.',
+      time: '2 hours ago',
+      status: 'pending',
+    },
+  ]);
+
+  const handleResolveReport = (id: string, action: 'suspend' | 'dismiss') => {
+    setCommunityReports((prev) =>
+      prev.map((r) =>
+        r.id === id ? { ...r, status: action === 'suspend' ? 'action_taken' : 'dismissed' } : r
+      )
+    );
+    if (action === 'suspend') {
+      toast('Event suspended: Ticket sales frozen and organizer escrow locked.');
+    } else {
+      toast('Report dismissed after review.');
+    }
+  };
+
   const handleSeedDatabase = async () => {
     setIsSeeding(true);
     try {
@@ -336,30 +370,101 @@ export default function Admin() {
         </div>
       )}
 
-      {/* 4. Fraud & Alerts */}
+      {/* 4. Fraud & Alerts & Community Reports */}
       {tab === 'Fraud & Alerts' && (
-        <div className="mt-4 space-y-3">
-          {flags.map((f) => (
-            <Card key={f.id} className={`p-4 transition-opacity ${f.resolved ? 'opacity-55' : ''}`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Icon name="warning" className={f.level === 'high' ? 'text-coral-500' : 'text-amber-500'} />
-                  <span className="font-semibold text-slate-900 dark:text-slate-100">{f.target}</span>
-                </div>
-                <Badge tone={f.level === 'high' ? 'coral' : 'brand'}>
-                  {f.resolved ? 'resolved' : `${f.level} risk`}
-                </Badge>
+        <div className="mt-4 space-y-5">
+          {/* Community Reports Queue */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Community Fraud Reports ({communityReports.filter(r => r.status === 'pending').length} Action Required)</h3>
+                <p className="muted text-xs">Flagged by verified attendees &amp; venue managers.</p>
               </div>
-              <p className="muted mt-1.5 text-sm">{f.reason}</p>
-              {!f.resolved && (
-                <div className="mt-3">
-                  <Button size="sm" variant="outline" onClick={() => resolve(f.id)}>
-                    Mark Resolved
-                  </Button>
-                </div>
-              )}
-            </Card>
-          ))}
+              <Badge tone="coral">Zero Tolerance</Badge>
+            </div>
+
+            <div className="space-y-3">
+              {communityReports.map((r) => (
+                <Card
+                  key={r.id}
+                  className={`p-4 transition ${
+                    r.status === 'action_taken'
+                      ? 'border-rose-500/30 bg-rose-500/5'
+                      : r.status === 'dismissed'
+                      ? 'opacity-60'
+                      : 'border-l-4 border-l-rose-500'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 dark:text-white">{r.eventTitle}</span>
+                        <span className="rounded-md bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                          {r.reason}
+                        </span>
+                      </div>
+                      <p className="muted text-xs mt-0.5">Reported by {r.reporter} · {r.time}</p>
+                    </div>
+
+                    <Badge tone={r.status === 'pending' ? 'coral' : r.status === 'action_taken' ? 'coral' : 'muted'}>
+                      {r.status === 'pending' ? 'Pending Review' : r.status === 'action_taken' ? 'Event Suspended' : 'Dismissed'}
+                    </Badge>
+                  </div>
+
+                  <p className="mt-2.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-midnight-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                    "{r.details}"
+                  </p>
+
+                  {r.status === 'pending' && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="coral"
+                        onClick={() => handleResolveReport(r.id, 'suspend')}
+                      >
+                        <Icon name="block" className="text-sm" /> Suspend Event &amp; Freeze Escrow
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleResolveReport(r.id, 'dismiss')}
+                      >
+                        Dismiss as False Alarm
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Automated System Risk Flags */}
+          <div className="pt-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">System Automated Flags</h3>
+            <div className="space-y-3">
+              {flags.map((f) => (
+                <Card key={f.id} className={`p-4 transition-opacity ${f.resolved ? 'opacity-55' : ''}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Icon name="warning" className={f.level === 'high' ? 'text-coral-500' : 'text-amber-500'} />
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">{f.target}</span>
+                    </div>
+                    <Badge tone={f.level === 'high' ? 'coral' : 'brand'}>
+                      {f.resolved ? 'resolved' : `${f.level} risk`}
+                    </Badge>
+                  </div>
+                  <p className="muted mt-1.5 text-sm">{f.reason}</p>
+                  {!f.resolved && (
+                    <div className="mt-3">
+                      <Button size="sm" variant="outline" onClick={() => resolve(f.id)}>
+                        Mark Resolved
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
