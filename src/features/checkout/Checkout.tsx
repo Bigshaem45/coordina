@@ -53,19 +53,18 @@ export default function Checkout() {
     const o = complete(lines, f.total, f.fees, sub === 0 ? 'Free' : method);
     try {
       await convex.mutation(api.orders.createOrder, {
-        orderId: o.id,
-        items: rows.map((r) => ({
-          eventId: r.event.id.startsWith('event') ? undefined : (r.event.id as any),
-          tierId: r.tier.id,
-          tierName: r.tier.name,
-          quantity: r.qty,
-          unitPrice: r.tier.price,
-        })),
-        subtotal: sub,
-        total: f.total,
-        paymentMethod: sub === 0 ? 'free' : method === 'Card' ? 'card' : 'bank_transfer',
         customerName: 'Guest Attendee',
         customerEmail: 'attendee@coordina.app',
+        transactionRef: o.id,
+        paymentMethod: method === 'Card' ? 'card' : method === 'USSD' ? 'ussd' : 'transfer',
+        items: rows.map((r) => ({
+          eventId: r.event.id as any,
+          eventTitle: r.event.title,
+          tierId: r.tier.id,
+          tierName: r.tier.name,
+          price: r.tier.price,
+          qty: r.qty,
+        })),
       });
     } catch (e) {
       console.warn('Convex order sync:', e);

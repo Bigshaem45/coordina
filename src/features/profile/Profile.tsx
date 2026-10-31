@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
 import { Badge, Button, Card, Chip } from '../../design-system/ui';
-import { spaces } from '../../data/mock';
-import { useStore } from '../../store';
+import { useStore, useAllSpaces } from '../../store';
 import { naira } from '../../lib/format';
 
 export default function Profile() {
   const s = useStore();
+  const allSpaces = useAllSpaces();
 
   const workspaceLinks = [
     { to: '/', icon: 'home', title: 'Landing Page', sub: 'Explore public showcase & features' },
@@ -135,7 +135,7 @@ export default function Profile() {
                 <div key={b.id} className="flex items-center justify-between py-2.5 text-sm">
                   <div>
                     <p className="font-medium text-slate-900 dark:text-slate-100">
-                      {spaces.find((x) => x.id === b.spaceId)?.name}
+                      {allSpaces.find((x) => x.id === b.spaceId)?.name ?? 'Verified Space'}
                     </p>
                     <p className="muted text-xs">
                       {b.date} · {b.guests} guests

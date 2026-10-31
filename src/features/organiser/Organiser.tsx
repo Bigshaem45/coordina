@@ -737,7 +737,7 @@ function OrganizerVerificationPortal() {
       venueConfirmation: {
         id: 'vc-' + Date.now(),
         venueId: selectedEvent.spaceId,
-        venueName: spaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
+        venueName: allSpaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
         contactEmail: venueEmail.trim(),
         contactPhone: venuePhone.trim(),
         token,

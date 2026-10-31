@@ -44,8 +44,18 @@ export default function Admin() {
     return v.status === filterStatus;
   });
 
-  const handleDecision = (id: string, status: VerificationStatus) => {
+  const handleDecision = async (id: string, status: VerificationStatus) => {
     reviewVerification(id, status, reviewNote.trim() || undefined);
+    try {
+      await convex.mutation('verification:reviewEvent' as any, {
+        verificationId: id.startsWith('vr-') ? undefined : (id as any),
+        decision: status === 'Event Verified' || status === 'Venue Confirmed' ? 'approved' : status === 'Event Suspended' ? 'suspended' : 'rejected',
+        reviewerNotes: reviewNote.trim() || undefined,
+        trustLevel: status === 'Event Verified' ? 'Coordina Trusted' : 'Unverified',
+      });
+    } catch (e) {
+      console.warn('Convex review sync:', e);
+    }
     toast(`Verification updated: ${status}`);
     setSelectedRecord(null);
     setReviewNote('');

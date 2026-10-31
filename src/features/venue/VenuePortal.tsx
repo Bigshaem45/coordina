@@ -5,6 +5,8 @@ import { Button, Card } from '../../design-system/ui';
 import { Logo } from '../../design-system/Logo';
 import { useStore } from '../../store';
 import { toast } from '../../lib/fx';
+import { convex } from '../../lib/convex';
+import { api } from '../../../convex/_generated/api';
 
 export default function VenuePortal() {
   const { token } = useParams<{ token: string }>();
@@ -17,8 +19,17 @@ export default function VenuePortal() {
   const [done, setDone] = useState(false);
   const [decision, setDecision] = useState<'Confirmed' | 'Declined' | null>(null);
 
-  const handleConfirm = (confirmed: boolean) => {
+  const handleConfirm = async (confirmed: boolean) => {
     confirmVenue(record.venueConfirmation.token, confirmed, notes.trim() || undefined);
+    try {
+      await convex.mutation(api.verification.confirmVenueBooking, {
+        token: record.venueConfirmation.token,
+        status: confirmed ? 'confirmed' : 'disputed',
+        notes: notes.trim() || undefined,
+      });
+    } catch (e) {
+      console.warn('Convex venue confirmation sync:', e);
+    }
     setDecision(confirmed ? 'Confirmed' : 'Declined');
     setDone(true);
     toast(confirmed ? 'Booking verified and confirmed!' : 'Booking declined. Notice sent to organizer.');
