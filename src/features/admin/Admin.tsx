@@ -6,6 +6,7 @@ import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { useStore } from '../../store';
 import { toast } from '../../lib/fx';
 import { convex } from '../../lib/convex';
+import { api } from '../../../convex/_generated/api';
 import { sendVerificationStatusEmail } from '../../lib/email';
 import type { EventVerificationRecord, VerificationStatus } from '../../types';
 
@@ -17,6 +18,9 @@ export default function Admin() {
   const flags = useStore((s) => s.flags);
   const reviewVerification = useStore((s) => s.adminReviewVerification);
   const resolve = useStore((s) => s.resolveFlag);
+  const blacklistedIdentities = useStore((s) => s.blacklistedIdentities);
+  const addBlacklistIdentity = useStore((s) => s.addBlacklistIdentity);
+  const pardonBlacklistIdentity = useStore((s) => s.pardonBlacklistIdentity);
   const [tab, setTab] = useState<AdminTab>('Verification Desk');
   const [selectedRecord, setSelectedRecord] = useState<EventVerificationRecord | null>(null);
   const [reviewNote, setReviewNote] = useState('');
@@ -41,21 +45,6 @@ export default function Admin() {
       reporter: 'Fatima M.',
       time: '2 hours ago',
       status: 'pending',
-    },
-  ]);
-
-  const [blacklistedIdentities, setBlacklistedIdentities] = useState([
-    {
-      id: 'blk-1',
-      organizerName: 'Shadow Promoters Ent.',
-      email: 'fraudster@fakevents.ng',
-      phone: '+234 802 000 9988',
-      nin: 'NIN-9920194820',
-      cacNumber: 'RC-998811',
-      reason: 'Phantom concert ticket scam with stolen venue graphics',
-      eventTitle: 'VIP Lagos Beach Rave 2026',
-      flaggedAt: 'Yesterday',
-      status: 'active_blacklist' as const,
     },
   ]);
 
@@ -100,7 +89,7 @@ export default function Admin() {
       status: 'active_blacklist' as const,
     };
 
-    setBlacklistedIdentities((prev) => [newRecord, ...prev]);
+    addBlacklistIdentity(newRecord);
 
     if (flagModalTarget.reportId) {
       handleResolveReport(flagModalTarget.reportId, 'suspend');
@@ -126,9 +115,7 @@ export default function Admin() {
   };
 
   const handlePardonIdentity = (id: string) => {
-    setBlacklistedIdentities((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: 'pardoned' as const } : b))
-    );
+    pardonBlacklistIdentity(id);
     toast('Organizer identity pardoned and restrictions lifted.');
   };
 

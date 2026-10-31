@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import type { CEvent, Ticket, Vibe, Category, City, EventVerificationRecord, AuditLog, VerificationStatus, Space } from '../types';
+import type { CEvent, Ticket, Vibe, Category, City, EventVerificationRecord, AuditLog, VerificationStatus, Space, BlacklistedIdentity } from '../types';
 import { events as seedEvents, spaces as seedSpaces, initialVerifications, initialAuditLogs, AREAS } from '../data/mock';
 import type { PlanItem } from '../lib/clash';
 
@@ -31,6 +31,7 @@ interface State {
   savedCard: string | null; reports: { id: string; target: string; reason: string }[];
   admin: AdminItem[]; flags: FraudFlag[]; checkedIn: Record<string, number>;
   verifications: EventVerificationRecord[]; auditLogs: AuditLog[];
+  blacklistedIdentities: BlacklistedIdentity[];
   cartOpen: boolean; swapNotice: string | null;
 
   finishOnboarding: (p: { city: City; interests: Category[]; budget: number; vibe: Vibe }) => void;
@@ -51,6 +52,9 @@ interface State {
   adminReviewVerification: (id: string, status: VerificationStatus, reviewerNotes?: string) => void;
   confirmVenueBooking: (token: string, confirmed: boolean, notes?: string) => boolean;
   submitForVerification: (rec: EventVerificationRecord) => void;
+  addBlacklistIdentity: (record: BlacklistedIdentity) => void;
+  pardonBlacklistIdentity: (id: string) => void;
+  checkIdentityIsBlacklisted: (opts: { email?: string; phone?: string; nin?: string }) => { blacklisted: boolean; reason?: string; matchedField?: string };
   checkIn: (eventId: string) => void;
 }
 
@@ -85,6 +89,32 @@ export const useStore = create<State>()(
       savedCard: null, reports: [], checkedIn: {}, cartOpen: false, swapNotice: null,
       verifications: initialVerifications,
       auditLogs: initialAuditLogs,
+      blacklistedIdentities: [
+        {
+          id: 'blk-1',
+          organizerName: 'Phantom Rhythms Ent.',
+          email: 'events@phantomrhythms.ng',
+          phone: '+234 809 999 1122',
+          nin: 'NIN-9920194820',
+          cacNumber: 'RC-9988112',
+          reason: 'Fake lineup & non-existent venue contract in Maitama',
+          eventTitle: 'Secret Mansion Rave 2026',
+          flaggedAt: '2 days ago',
+          status: 'active_blacklist' as const,
+        },
+        {
+          id: 'blk-2',
+          organizerName: 'Urban Scalpers Global',
+          email: 'vip@urbanscalpers.ng',
+          phone: '+234 814 000 7788',
+          nin: 'NIN-1029384756',
+          cacNumber: 'RC-7722114',
+          reason: 'Ticket scalping ring extortion outside Paystack escrow',
+          eventTitle: 'Lagos Island VIP Gala',
+          flaggedAt: '5 days ago',
+          status: 'active_blacklist' as const,
+        },
+      ],
       admin: [],
       flags: [],
 
@@ -223,6 +253,67 @@ export const useStore = create<State>()(
           };
         });
         return matched;
+      },
+      addBlacklistIdentity: (record) =>
+        set((s) => ({
+          blacklistedIdentities: [record, ...s.blacklistedIdentities.filter((b) => b.id !== record.id)],
+          auditLogs: [
+            {
+              id: 'log-' + uid(),
+              timestamp: new Date().toISOString(),
+              actor: 'Compliance Officer',
+              action: 'Organizer Flagged & Blacklisted',
+              targetId: record.id,
+              targetType: 'Organizer',
+              details: `Flagged organizer "${record.organizerName}" (Email: ${record.email}, Phone: ${record.phone}, NIN: ${record.nin}). Reason: ${record.reason}`,
+            },
+            ...s.auditLogs,
+          ],
+        })),
+      pardonBlacklistIdentity: (id) =>
+        set((s) => ({
+          blacklistedIdentities: s.blacklistedIdentities.map((b) =>
+            b.id === id ? { ...b, status: 'pardoned' as const } : b
+          ),
+          auditLogs: [
+            {
+              id: 'log-' + uid(),
+              timestamp: new Date().toISOString(),
+              actor: 'Compliance Officer',
+              action: 'Organizer Pardoned',
+              targetId: id,
+              targetType: 'Organizer',
+              details: `Pardoned organizer identity record ${id} from active blacklist.`,
+            },
+            ...s.auditLogs,
+          ],
+        })),
+      checkIdentityIsBlacklisted: ({ email, phone, nin }) => {
+        const list = get().blacklistedIdentities.filter((b) => b.status === 'active_blacklist');
+        const cleanEmail = email?.trim().toLowerCase();
+        const cleanPhone = phone?.trim();
+        const cleanNin = nin?.trim().toUpperCase();
+
+        const match = list.find(
+          (b) =>
+            (cleanEmail && b.email.toLowerCase() === cleanEmail) ||
+            (cleanPhone && b.phone === cleanPhone) ||
+            (cleanNin && b.nin.toUpperCase() === cleanNin)
+        );
+
+        if (match) {
+          return {
+            blacklisted: true,
+            reason: match.reason,
+            matchedField:
+              cleanNin && match.nin.toUpperCase() === cleanNin
+                ? 'Director NIN'
+                : cleanEmail && match.email.toLowerCase() === cleanEmail
+                ? 'Organizer Email'
+                : 'Phone Number',
+          };
+        }
+        return { blacklisted: false };
       },
       checkIn: (eventId) => set((s) => ({ checkedIn: { ...s.checkedIn, [eventId]: (s.checkedIn[eventId] ?? 0) + 1 } })),
     }),

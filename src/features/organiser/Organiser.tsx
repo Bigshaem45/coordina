@@ -841,6 +841,7 @@ function Payouts() {
 function OrganizerVerificationPortal() {
   const verifications = useStore((s) => s.verifications);
   const submitForVerification = useStore((s) => s.submitForVerification);
+  const checkIdentityIsBlacklisted = useStore((s) => s.checkIdentityIsBlacklisted);
   const allEvents = useAllEvents();
   const allSpaces = useAllSpaces();
   const mine = allEvents.filter((e) => e.organiserId === 'org1' || e.organiserId === 'org2' || e.organiserId === 'o1');
@@ -856,6 +857,12 @@ function OrganizerVerificationPortal() {
 
   const selectedEvent = mine.find((e) => e.id === selectedEventId) ?? mine[0];
   const activeVerifications = verifications.filter((v) => v.organizerId === 'org1' || v.organizerId === 'org2');
+
+  const blacklistStatus = checkIdentityIsBlacklisted({
+    nin,
+    phone,
+    email: venueEmail,
+  });
 
   // Compute live risk assessment preview
   const liveRisk = calculateRiskAssessment({
@@ -873,6 +880,11 @@ function OrganizerVerificationPortal() {
   const handleSubmitVerification = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEvent) return;
+
+    if (blacklistStatus.blacklisted) {
+      toast(`KYC Verification Blocked: ${blacklistStatus.matchedField} is on the compliance blacklist.`);
+      return;
+    }
 
     const token = 'tok_' + Math.random().toString(36).slice(2, 10);
     const id = 'vr-' + Date.now();
@@ -1022,6 +1034,36 @@ function OrganizerVerificationPortal() {
         </div>
 
         <form onSubmit={handleSubmitVerification} className="space-y-4">
+          {blacklistStatus.blacklisted && (
+            <div className="rounded-2xl border-2 border-rose-500/50 bg-rose-500/10 p-5 text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-200">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-md">
+                  <Icon name="gavel" className="text-xl" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                      KYC Restricted &amp; Blacklisted
+                    </span>
+                    <span className="text-xs font-semibold">Matched Vector: {blacklistStatus.matchedField}</span>
+                  </div>
+                  <h4 className="mt-1 text-base font-bold text-rose-950 dark:text-rose-100">
+                    Organizer Verification Blocked
+                  </h4>
+                  <p className="mt-1 text-xs leading-relaxed opacity-90">
+                    This <strong>{blacklistStatus.matchedField}</strong> is listed on the COORDINA National Fraud &amp; Identity Blacklist:
+                  </p>
+                  <blockquote className="mt-2 rounded-lg border-l-4 border-rose-500 bg-rose-500/10 px-3 py-1.5 text-xs font-medium italic">
+                    "{blacklistStatus.reason}"
+                  </blockquote>
+                  <p className="mt-2.5 text-[11px] opacity-80">
+                    Remote verification applications, escrow payouts, and new ticket creations are permanently frozen under Nigerian Anti-Fraud Compliance Directives. For dispute resolutions or identity pardon, contact compliance@coordina.ng.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Select Event to Verify</label>
             <select
@@ -1163,8 +1205,16 @@ function OrganizerVerificationPortal() {
             </ul>
           </div>
 
-          <Button full size="lg" type="submit">
-            Submit for Remote Verification
+          <Button
+            full
+            size="lg"
+            type="submit"
+            disabled={blacklistStatus.blacklisted}
+            variant={blacklistStatus.blacklisted ? 'ghost' : 'primary'}
+          >
+            {blacklistStatus.blacklisted
+              ? `Verification Blocked (${blacklistStatus.matchedField} Blacklisted)`
+              : 'Submit for Remote Verification'}
           </Button>
         </form>
       </Card>

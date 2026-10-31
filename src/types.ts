@@ -102,6 +102,19 @@ export interface Organiser {
   status?: VerificationStatus;
 }
 
+export interface BlacklistedIdentity {
+  id: string;
+  organizerName: string;
+  email: string;
+  phone: string;
+  nin: string;
+  cacNumber?: string;
+  reason: string;
+  eventTitle?: string;
+  flaggedAt: string;
+  status: 'active_blacklist' | 'pardoned';
+}
+
 export interface Space {
   id: string;
   name: string;
