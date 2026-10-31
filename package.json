@@ -21,6 +21,7 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.4",
     "canvas-confetti": "^1.9.4",
+    "convex": "^1.49.0",
     "framer-motion": "^14.8.0",
     "leaflet": "^1.9.4",
     "qrcode.react": "^4.2.0",
