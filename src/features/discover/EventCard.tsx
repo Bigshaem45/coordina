@@ -40,22 +40,22 @@ export function EventCard({
 
   if (variant === 'row') {
     return (
-      <div ref={ref} className="surface group flex items-center gap-3.5 rounded-2xl p-3 shadow-card transition hover:border-brand-300">
+      <div ref={ref} className="surface group flex w-full min-w-0 items-center gap-3.5 rounded-2xl p-3 shadow-card transition hover:border-brand-300">
         <Link to={`/event/${event.id}`} className="shrink-0">
           <Cover gradient={event.image} category={event.category} className="h-20 w-20 rounded-xl" label={event.title} />
         </Link>
-        <Link to={`/event/${event.id}`} className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-brand-500">
+        <Link to={`/event/${event.id}`} className="min-w-0 flex-1 overflow-hidden">
+          <p className="truncate text-xs font-medium text-brand-500">
             {fmtDate(event.start)} · {fmtTime(event.start)}
           </p>
           <h3 className="mt-0.5 truncate text-sm font-semibold text-slate-900 dark:text-white">{event.title}</h3>
           <p className="muted mt-1 flex items-center gap-1 truncate text-xs">
-            <Icon name="location_on" className="text-[14px] text-slate-400" />
+            <Icon name="location_on" className="shrink-0 text-[14px] text-slate-400" />
             <span className="truncate">{sp?.name ?? event.area}, {event.area}</span>
-            {sp?.verified && <Icon name="verified" filled className="text-[13px] text-neon-500" />}
+            {sp?.verified && <Icon name="verified" filled className="shrink-0 text-[13px] text-neon-500" />}
           </p>
           <div className="mt-1 flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+            <span className="shrink-0 text-xs font-semibold text-slate-800 dark:text-slate-200">
               {p === 0 ? 'Free' : naira(p)}
             </span>
             <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />

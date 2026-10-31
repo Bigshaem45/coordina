@@ -121,7 +121,7 @@ export function Layout() {
       {/* Mobile Tab Bar (hidden on detail/checkout screens that mount their own sticky CTA bar) */}
       {!hasOwnBottomBar && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-40 flex w-full max-w-full h-[calc(4rem+env(safe-area-inset-bottom,0px))] items-center border-t border-[var(--border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(4rem+env(safe-area-inset-bottom,0px))] w-full items-center border-t border-[var(--border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
           aria-label="Primary"
         >
           {MOBILE_NAV.map((n) => (

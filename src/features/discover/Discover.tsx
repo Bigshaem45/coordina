@@ -65,7 +65,7 @@ export default function Discover() {
   };
 
   return (
-    <div className="px-4 py-5 md:px-0">
+    <div className="w-full min-w-0 max-w-full px-4 py-5 md:px-0">
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Explore {city}</h1>

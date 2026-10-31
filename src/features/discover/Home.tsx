@@ -34,20 +34,20 @@ export default function Home() {
   return (
     <div className="w-full min-w-0 max-w-full overflow-x-hidden pb-8 pt-4 md:pt-6">
       {/* Top Bar (Mobile Logo + Location Switcher) */}
-      <div className="flex w-full items-center justify-between px-4 md:px-0">
-        <div className="md:hidden">
+      <div className="flex w-full min-w-0 items-center justify-between px-4 md:px-0">
+        <div className="shrink-0 md:hidden">
           <Logo size={26} />
         </div>
-        <div className="hidden md:block">
+        <div className="hidden min-w-0 md:block">
           <p className="muted text-xs">Exploring events in</p>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{city}, Nigeria</h1>
+          <h1 className="truncate text-2xl font-bold text-slate-900 dark:text-white">{city}, Nigeria</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setCity(city === 'Abuja' ? 'Lagos' : 'Abuja')}
             aria-label={`Location ${city}. Switch city`}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
           >
             <Icon name="location_on" className="text-brand-500 text-sm" />
             <span>{city}</span>
@@ -57,7 +57,7 @@ export default function Home() {
             type="button"
             onClick={() => nav('/map')}
             aria-label="Open map"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 md:hidden"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 md:hidden"
           >
             <Icon name="map" className="text-[18px]" />
           </button>
@@ -65,16 +65,16 @@ export default function Home() {
       </div>
 
       {/* Search & Map Banner Row */}
-      <div className="mt-4 grid gap-3 px-4 md:grid-cols-12 md:px-0">
+      <div className="mt-4 grid w-full min-w-0 gap-3 px-4 md:grid-cols-12 md:px-0">
         <button
           type="button"
           onClick={() => nav('/discover')}
-          className="surface flex h-12 items-center gap-3 rounded-2xl px-4 text-left text-sm text-slate-500 shadow-card transition hover:border-brand-300 md:col-span-8"
+          className="surface flex h-12 w-full min-w-0 items-center gap-3 rounded-2xl px-4 text-left text-sm text-slate-500 shadow-card transition hover:border-brand-300 md:col-span-8"
           aria-label="Search events and spaces"
         >
-          <Icon name="search" className="text-lg text-slate-400" />
-          <span className="flex-1 truncate">Search concerts, rooftops, galleries, areas…</span>
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <Icon name="search" className="shrink-0 text-lg text-slate-400" />
+          <span className="min-w-0 flex-1 truncate">Search concerts, rooftops, areas…</span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
             <Icon name="tune" className="text-base" />
           </span>
         </button>
@@ -97,7 +97,7 @@ export default function Home() {
       </div>
 
       {/* Clean Category Pills */}
-      <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto px-4 pb-1 md:px-0">
+      <div className="no-scrollbar mt-4 flex w-full max-w-full gap-2 overflow-x-auto px-4 pb-1 md:px-0">
         {CATEGORIES.map((c) => (
           <Link
             key={c}
@@ -124,8 +124,8 @@ export default function Home() {
                 </Link>
               }
             >
-              <div className="px-4 md:px-0">
-                <div className="group relative h-64 overflow-hidden rounded-3xl bg-slate-900 shadow-card sm:h-72">
+              <div className="w-full min-w-0 px-4 md:px-0">
+                <div className="group relative h-64 w-full overflow-hidden rounded-3xl bg-slate-900 shadow-card sm:h-72">
                   <Link to={`/event/${spotlight.id}`} className="block h-full w-full">
                     <Cover gradient={spotlight.image} category={spotlight.category} className="h-full w-full" label={spotlight.title} />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-transparent" />
@@ -147,9 +147,9 @@ export default function Home() {
                       </span>
                       <h3 className="mt-1.5 truncate text-xl font-bold text-white sm:text-2xl">{spotlight.title}</h3>
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-200">
-                        <Icon name="location_on" className="text-sm" />
-                        <span>{getSpace(spotlight.spaceId)?.name ?? spotlight.area}, {spotlight.area}</span>
-                        <span>· {minPrice(spotlight) === 0 ? 'Free' : `From ${naira(minPrice(spotlight))}`}</span>
+                        <Icon name="location_on" className="text-sm shrink-0" />
+                        <span className="truncate">{getSpace(spotlight.spaceId)?.name ?? spotlight.area}, {spotlight.area}</span>
+                        <span className="shrink-0">· {minPrice(spotlight) === 0 ? 'Free' : `From ${naira(minPrice(spotlight))}`}</span>
                       </p>
                     </Link>
                     <button
@@ -211,7 +211,7 @@ export default function Home() {
               </Link>
             }
           >
-            <div className="no-scrollbar flex gap-4 overflow-x-auto px-4 pb-2 md:px-0">
+            <div className="no-scrollbar flex w-full max-w-full gap-4 overflow-x-auto px-4 pb-2 md:px-0">
               {verified.map((s) => (
                 <Link
                   key={s.id}
@@ -229,7 +229,7 @@ export default function Home() {
                       <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{s.name}</h3>
                       <Stars value={s.rating} />
                     </div>
-                    <p className="muted text-xs">{s.area}, {s.city} · {s.crowd}</p>
+                    <p className="muted truncate text-xs">{s.area}, {s.city} · {s.crowd}</p>
                     <div className="pt-0.5">
                       <VerifiedBadge />
                     </div>
@@ -258,7 +258,7 @@ function Row({
   if (events.length === 0) return null;
   return (
     <Section title={title} subtitle={subtitle} action={action}>
-      <div className="no-scrollbar flex gap-4 overflow-x-auto px-4 pb-2 md:px-0">
+      <div className="no-scrollbar flex w-full max-w-full gap-4 overflow-x-auto px-4 pb-2 md:px-0">
         {events.map((e) => (
           <EventCard key={e.id} event={e} compact />
         ))}

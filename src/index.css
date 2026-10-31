@@ -32,22 +32,21 @@ button, a, input, select, textarea {
   touch-action: manipulation;
 }
 
-html, body {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
-  position: relative;
-}
-
 html {
   font-size: 100%;
   scroll-behavior: smooth;
   height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
+  width: 100%;
+  max-width: 100%;
   min-height: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font-family: 'Questrial', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
