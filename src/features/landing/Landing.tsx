@@ -511,8 +511,12 @@ export default function Landing() {
 
       {/* Android APK Download Showcase Section */}
       <section id="download" className="mx-auto max-w-6xl px-4 py-12 md:px-6">
-        <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-900 via-midnight-900 to-brand-950 p-6 text-white shadow-float md:p-12">
-          <div className="grid items-center gap-8 md:grid-cols-12">
+        <div className="relative overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-br from-[#090D16] via-[#0F172A] to-[#161F33] p-6 text-white shadow-2xl md:p-12">
+          {/* Subtle brand ambient glow without any white bleaching */}
+          <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-brand-600/10 blur-3xl" />
+          <div className="pointer-events-none absolute -left-20 -top-20 h-64 w-64 rounded-full bg-neon-500/10 blur-3xl" />
+
+          <div className="relative grid items-center gap-8 md:grid-cols-12">
             <div className="md:col-span-7">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-neon-500/30 bg-neon-500/10 px-3 py-1 text-xs font-semibold text-neon-400">
                 <Icon name="android" className="text-sm" /> Official Android Release · v1.0.0
@@ -546,15 +550,15 @@ export default function Landing() {
 
             {/* QR Code & Phone Card */}
             <div className="md:col-span-5">
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-6 backdrop-blur-xl text-center">
+              <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-6 text-center shadow-lg">
                 <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-2xl bg-white p-3 shadow-card">
                   {/* High quality SVG QR code mockup for direct mobile download */}
                   <svg viewBox="0 0 100 100" className="h-full w-full fill-slate-900">
                     <path d="M0 0h30v30H0zM10 10h10v10H10zM70 0h30v30H70zM80 10h10v10H80zM0 70h30v30H0zM10 80h10v10H10zM40 10h10v10H40zM50 20h10v10H50zM40 30h10v10H40zM10 40h10v10H10zM20 50h10v10H20zM30 40h10v10H30zM50 40h20v10H50zM70 40h10v10H70zM80 50h10v20H80zM40 60h10v20H40zM60 60h10v10H60zM70 70h20v10H70zM50 80h10v20H50zM80 80h10v10H80zM90 90h10v10H90zM60 90h10v10H60z" />
                   </svg>
                 </div>
-                <p className="mt-3 text-xs font-medium text-slate-200">Scan with your phone camera</p>
-                <p className="muted text-[11px]">Direct download to any Android device</p>
+                <p className="mt-3 text-xs font-semibold text-white">Scan with your phone camera</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">Direct download to any Android device</p>
               </div>
             </div>
           </div>
