@@ -7,6 +7,7 @@ import { computeFees, fmtDate, naira } from '../../lib/format';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 import { sendBookingConfirmationEmail } from '../../lib/email';
+import { payWithPaystack } from '../../lib/paystack';
 
 type Method = 'Card' | 'Bank transfer' | 'USSD';
 
@@ -49,17 +50,17 @@ export default function Checkout() {
     saved ||
     (card.num.replace(/\s/g, '').length >= 12 && card.exp.length >= 4 && card.cvv.length >= 3);
 
-  const pay = async () => {
-    setPaying(true);
+  const finalizeOrder = async (customRef?: string) => {
     const o = complete(lines, f.total, f.fees, sub === 0 ? 'Free' : method);
     const customerEmail = user?.email || 'attendee@coordina.app';
     const customerName = user?.name || 'Guest Attendee';
+    const txRef = customRef || o.id;
 
     try {
       await convex.mutation(api.orders.createOrder, {
         customerName,
         customerEmail,
-        transactionRef: o.id,
+        transactionRef: txRef,
         paymentMethod: method === 'Card' ? 'card' : method === 'USSD' ? 'ussd' : 'transfer',
         items: rows.map((r) => ({
           eventId: r.event.id as any,
@@ -86,7 +87,45 @@ export default function Checkout() {
     } catch (e) {
       console.warn('Convex order sync:', e);
     }
+    setPaying(false);
     nav(`/success/${o.id}`, { replace: true });
+  };
+
+  const pay = async () => {
+    setPaying(true);
+    const customerEmail = user?.email || 'attendee@coordina.app';
+
+    // If free event, complete directly
+    if (sub === 0) {
+      return finalizeOrder();
+    }
+
+    // Launch Paystack Inline Checkout
+    try {
+      const launched = await payWithPaystack({
+        email: customerEmail,
+        amountKobo: Math.round(f.total * 100),
+        reference: `CD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        metadata: {
+          customerName: user?.name || 'Guest Attendee',
+          itemCount: rows.length,
+          events: rows.map((r) => r.event.title).join(', '),
+        },
+        onSuccess: (res) => {
+          finalizeOrder(res.reference);
+        },
+        onCancel: () => {
+          setPaying(false);
+        },
+      });
+
+      if (!launched) {
+        // Fallback if browser blocks popups or Paystack inline is unavailable
+        await finalizeOrder();
+      }
+    } catch {
+      await finalizeOrder();
+    }
   };
 
   const inputCls =

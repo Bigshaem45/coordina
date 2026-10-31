@@ -139,6 +139,32 @@ export function SquadDetail() {
   const [as, setAs] = useState('You');
   const [newName, setNewName] = useState('');
 
+  const [messages, setMessages] = useState<Array<{ id: string; sender: string; text: string; time: string }>>([
+    { id: '1', sender: 'Host', text: 'Hey squad! Vote on your top pick for Saturday so we can lock tickets.', time: '14:20' },
+    { id: '2', sender: 'Ada', text: 'Rooftop Afro-Fusion looks super lit! Upvoted 🔥', time: '14:28' },
+  ]);
+  const [chatText, setChatText] = useState('');
+  const [statuses, setStatuses] = useState<Record<string, string>>({
+    You: 'Ready',
+    Ada: 'On the way 🚗',
+    Tunde: 'At venue 📍',
+  });
+
+  const sendChat = () => {
+    if (!chatText.trim()) return;
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setMessages((prev) => [...prev, { id: String(Date.now()), sender: as, text: chatText.trim(), time: now }]);
+    setChatText('');
+  };
+
+  const toggleStatus = (member: string) => {
+    const list = ['Ready', 'On the way 🚗', 'At venue 📍', 'Delayed 🚦'];
+    const curr = statuses[member] || 'Ready';
+    const next = list[(list.indexOf(curr) + 1) % list.length];
+    setStatuses((prev) => ({ ...prev, [member]: next }));
+    toast(`${member} is now ${next}`);
+  };
+
   if (!squad) {
     return <EmptyState icon="groups" title="Squad not found" action={<Button onClick={() => nav('/squad')}>Back to Squads</Button>} />;
   }
@@ -256,6 +282,76 @@ export function SquadDetail() {
           );
         })}
       </div>
+
+      {/* Member Arrival Presence Status */}
+      <Card className="mt-5 p-4">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Squad Arrival Presence</h3>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {squad.members.map((m) => (
+            <button
+              key={m.name}
+              type="button"
+              onClick={() => toggleStatus(m.name)}
+              className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 text-left text-xs transition hover:border-brand-400 dark:border-slate-800 dark:bg-midnight-900"
+              title="Click to cycle status"
+            >
+              <div className="min-w-0 pr-1">
+                <p className="truncate font-semibold text-slate-900 dark:text-slate-100">{m.name}</p>
+                <p className="text-[11px] font-medium text-brand-600 dark:text-brand-400">{statuses[m.name] || 'Ready'}</p>
+              </div>
+              <Icon name="swap_horiz" className="text-xs text-slate-400" />
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* Squad Live Discussion Thread */}
+      <Card className="mt-5 p-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <Icon name="forum" className="text-brand-500" />
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Squad Chat</h3>
+          </div>
+          <span className="muted text-xs">{messages.length} notes</span>
+        </div>
+
+        <div className="mt-3 max-h-48 space-y-2.5 overflow-y-auto pr-1">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex flex-col text-xs ${msg.sender === as ? 'items-end' : 'items-start'}`}
+            >
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <span className="font-semibold text-slate-600 dark:text-slate-300">{msg.sender}</span>
+                <span>• {msg.time}</span>
+              </div>
+              <div
+                className={`mt-1 max-w-[85%] rounded-2xl px-3.5 py-2 ${
+                  msg.sender === as
+                    ? 'bg-brand-600 text-white rounded-tr-xs'
+                    : 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100 rounded-tl-xs'
+                }`}
+              >
+                {msg.text}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 flex gap-2">
+          <input
+            aria-label="Message"
+            placeholder={`Drop a message as ${as}...`}
+            value={chatText}
+            onChange={(e) => setChatText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+            className={inputCls}
+          />
+          <Button size="sm" disabled={!chatText.trim()} onClick={sendChat}>
+            <Icon name="send" />
+          </Button>
+        </div>
+      </Card>
 
       <Card className="mt-5 p-5">
         <div className="flex items-center justify-between">

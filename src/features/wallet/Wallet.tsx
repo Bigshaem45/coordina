@@ -51,7 +51,15 @@ export default function Wallet() {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">My Tickets</h1>
           <p className="muted text-xs">{tickets.length} pass{tickets.length > 1 ? 'es' : ''} in wallet</p>
         </div>
-        <Badge tone={online ? 'neon' : 'brand'}>{online ? 'Offline Ready' : 'Offline Mode'}</Badge>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/scanner"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:border-brand-500 hover:text-brand-600 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:text-white"
+          >
+            <Icon name="qr_code_scanner" className="text-sm" /> Gate Scanner
+          </Link>
+          <Badge tone={online ? 'neon' : 'brand'}>{online ? 'Offline Ready' : 'Offline Mode'}</Badge>
+        </div>
       </div>
 
       {/* Evenie-inspired Segmented Tabs */}
