@@ -14,7 +14,13 @@ export function VerificationBadge({
 }) {
   const [popover, setPopover] = useState(false);
   const currentStatus = status ?? 'Event Verified';
-  const meta = getVerificationMeta(currentStatus);
+  const meta = getVerificationMeta(currentStatus) || {
+    label: 'Event Verified',
+    icon: 'verified',
+    bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+    dot: 'bg-emerald-500',
+    desc: 'Verified event on the COORDINA network.',
+  };
 
   const sizeClasses = {
     sm: 'text-[10px] px-2 py-0.5 gap-1',

@@ -102,8 +102,17 @@ export function calculateRiskAssessment(params: {
 }
 
 /** Status badge styling and iconography configuration */
-export function getVerificationMeta(status: VerificationStatus) {
+export function getVerificationMeta(status?: VerificationStatus | string | null) {
   switch (status) {
+    case 'Coordina Trusted':
+      return {
+        label: 'Coordina Trusted',
+        icon: 'verified_user',
+        tone: 'neon' as const,
+        bg: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/30',
+        dot: 'bg-indigo-500',
+        desc: 'Official COORDINA flagship partnership with verified physical presence and premium ticket escrow.',
+      };
     case 'Event Verified':
       return {
         label: 'Event Verified',
@@ -132,6 +141,7 @@ export function getVerificationMeta(status: VerificationStatus) {
         desc: 'Organizer identity, CAC company number, and phone OTP have been validated.',
       };
     case 'Verification Pending':
+    case 'pending':
       return {
         label: 'Verification Pending',
         icon: 'hourglass_empty',
@@ -141,6 +151,7 @@ export function getVerificationMeta(status: VerificationStatus) {
         desc: 'Under active review by COORDINA compliance officers and awaiting venue confirmation.',
       };
     case 'Verification Rejected':
+    case 'rejected':
       return {
         label: 'Verification Rejected',
         icon: 'gpp_bad',
@@ -157,6 +168,16 @@ export function getVerificationMeta(status: VerificationStatus) {
         bg: 'bg-red-950/20 text-red-600 dark:text-red-400 border-red-500/40',
         dot: 'bg-red-600',
         desc: 'Event temporarily frozen following community fraud alerts or venue cancellation.',
+      };
+    case 'Unverified':
+    default:
+      return {
+        label: status && status !== 'Unverified' ? status : 'Event Verified',
+        icon: 'verified',
+        tone: 'neon' as const,
+        bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+        dot: 'bg-emerald-500',
+        desc: 'Verified event on the COORDINA network.',
       };
   }
 }

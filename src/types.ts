@@ -3,12 +3,14 @@ export type City = 'Abuja' | 'Lagos';
 export type Vibe = 'Chill' | 'Energetic' | 'Classy' | 'Family' | 'Creative';
 
 export type VerificationStatus =
+  | 'Coordina Trusted'
   | 'Organizer Verified'
   | 'Event Verified'
   | 'Venue Confirmed'
   | 'Verification Pending'
   | 'Verification Rejected'
-  | 'Event Suspended';
+  | 'Event Suspended'
+  | 'Unverified';
 
 export type RiskLevel = 'Low' | 'Medium' | 'High';
 
