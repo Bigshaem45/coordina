@@ -82,7 +82,7 @@ export default function Landing() {
   const featured = allEvents.slice(0, 6);
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] pb-20 text-[var(--text)] md:pb-0">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[var(--bg)] pb-20 text-[var(--text)] md:pb-0">
       {/* Minimalist Sticky & Translucent Navbar */}
       <header
         className={`sticky top-0 z-50 transition-all duration-300 ${

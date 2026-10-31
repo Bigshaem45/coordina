@@ -101,7 +101,7 @@ export default function Team() {
   }, []);
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)]">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[var(--bg)] text-[var(--text)]">
       {/* Top Navbar */}
       <header
         className={`sticky top-0 z-50 transition-all duration-300 ${

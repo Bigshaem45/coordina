@@ -28,6 +28,7 @@ export function Layout() {
   const [msg, setMsg] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const theme = useStore((s) => s.theme);
+  const city = useStore((s) => s.city);
   const swapNotice = useStore((s) => s.swapNotice);
   const count = useStore((s) => s.cart.length);
   const loc = useLocation();
@@ -66,25 +67,33 @@ export function Layout() {
 
   return (
     <div
-      className={`flex min-h-screen w-full max-w-full flex-col overflow-x-hidden bg-[var(--bg)] text-[var(--text)] ${
+      className={`flex min-h-screen w-full max-w-full flex-col overflow-x-clip bg-[var(--bg)] text-[var(--text)] ${
         hasOwnBottomBar
           ? 'pb-[calc(6rem+env(safe-area-inset-bottom,0px))]'
           : 'pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-12'
       }`}
     >
-      {/* Desktop Top Header */}
+      {/* Top Header (Sticky & Translucent on scroll across Desktop & Mobile) */}
       <header
-        className={`sticky top-0 z-40 hidden border-b transition-all duration-300 md:block ${
+        className={`sticky top-0 z-40 border-b transition-all duration-300 ${
           scrolled
             ? 'border-slate-200/70 bg-white/75 shadow-xs backdrop-blur-xl dark:border-slate-800/70 dark:bg-midnight-950/75'
             : 'border-slate-200/30 bg-white/50 backdrop-blur-md dark:border-slate-800/30 dark:bg-midnight-950/50'
         }`}
       >
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-6">
-          <Link to="/home" aria-label="COORDINA home" className="shrink-0">
-            <Logo size={30} />
-          </Link>
-          <nav className="flex items-center gap-1" aria-label="Primary">
+        <div className="mx-auto flex h-14 md:h-16 max-w-6xl items-center justify-between gap-3 md:gap-6 px-4 md:px-6">
+          <div className="flex items-center gap-2.5">
+            <Link to="/home" aria-label="COORDINA home" className="shrink-0">
+              <Logo size={28} />
+            </Link>
+            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200/60 bg-white/60 px-2.5 py-0.5 text-[11px] font-medium text-slate-700 shadow-2xs backdrop-blur-xs dark:border-slate-700/60 dark:bg-midnight-900/60 dark:text-slate-300">
+              <Icon name="location_on" className="text-xs text-brand-500" />
+              {city || 'Abuja'}
+            </span>
+          </div>
+
+          {/* Desktop Navigation Links */}
+          <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
             {NAV.map((n) => (
               <NavLink
                 key={n.to}
@@ -103,25 +112,27 @@ export function Layout() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-2.5">
+
+          {/* Right Action Icons (Studio + Plan Cart) */}
+          <div className="flex items-center gap-2">
             <Link
               to="/organiser"
-              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:bg-slate-800"
+              className="inline-flex h-8 md:h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 md:px-3.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <Icon name="dashboard" className="text-[15px] text-brand-500" />
-              Studio
+              <span className="hidden sm:inline">Studio</span>
             </Link>
             <button
               type="button"
               data-cart-target
-              className="inline-flex h-9 items-center gap-1.5 rounded-full bg-slate-900 px-3.5 text-xs font-medium text-white transition hover:bg-slate-800 dark:bg-brand-500 dark:hover:bg-brand-600"
+              className="inline-flex h-8 md:h-9 items-center gap-1.5 rounded-full bg-slate-900 px-2.5 md:px-3.5 text-xs font-medium text-white transition hover:bg-slate-800 dark:bg-brand-500 dark:hover:bg-brand-600"
               onClick={() => setCartOpen(true)}
               aria-label={`Open plan cart, ${count} items`}
             >
               <Icon name="shopping_bag" className="text-[15px]" />
-              <span>Plan</span>
+              <span className="hidden sm:inline">Plan</span>
               {count > 0 && (
-                <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-coral-500 px-1 text-[10px] font-bold text-white">
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-coral-500 px-1 text-[10px] font-bold text-white">
                   {count}
                 </span>
               )}
