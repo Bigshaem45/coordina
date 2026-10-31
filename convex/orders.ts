@@ -168,7 +168,7 @@ export const getOrderByOrderId = query({
 export const getUserTickets = query({
   args: { userId: v.optional(v.id('users')), email: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    let tickets = [];
+    let tickets: any[] = [];
 
     if (args.userId) {
       tickets = await ctx.db
@@ -183,8 +183,8 @@ export const getUserTickets = query({
     // Populate event details for each ticket
     const populated = await Promise.all(
       tickets.map(async (t) => {
-        const event = await ctx.db.get(t.eventId);
-        let space = null;
+        const event: any = await ctx.db.get(t.eventId);
+        let space: any = null;
         if (event?.spaceId) {
           space = await ctx.db.get(event.spaceId);
         }

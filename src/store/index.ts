@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { CEvent, Ticket, Vibe, Category, City, EventVerificationRecord, AuditLog, VerificationStatus } from '../types';
-import { events as seedEvents, initialVerifications, initialAuditLogs } from '../data/mock';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import type { CEvent, Ticket, Vibe, Category, City, EventVerificationRecord, AuditLog, VerificationStatus, Space } from '../types';
+import { events as seedEvents, spaces as seedSpaces, initialVerifications, initialAuditLogs, AREAS } from '../data/mock';
 import type { PlanItem } from '../lib/clash';
 
 export interface CartLine { eventId: string; tierId: string; qty: number }
@@ -72,7 +74,10 @@ export const useStore = create<State>()(
         set({ user: { name: a.name, email: a.email } });
         return null;
       },
-      socialSignIn: (provider) => set({ user: { name: 'Demo User', email: `demo@${provider.toLowerCase()}.com` } }),
+      socialSignIn: (provider) => {
+        const email = `attendee@${provider.toLowerCase()}.coordina.app`;
+        set({ user: { name: `${provider} Guest`, email } });
+      },
       signOut: () => set({ user: null }),
       onboarded: false, city: 'Abuja', interests: [], budget: 100000, vibe: 'Energetic',
       theme: 'light', lowData: false,
@@ -80,16 +85,8 @@ export const useStore = create<State>()(
       savedCard: null, reports: [], checkedIn: {}, cartOpen: false, swapNotice: null,
       verifications: initialVerifications,
       auditLogs: initialAuditLogs,
-      admin: [
-        { id: 'a1', kind: 'Venue', name: 'Skyline Terrace, Lekki', by: 'Ope Adeyemi', status: 'pending' },
-        { id: 'a2', kind: 'Event', name: 'Mega Detty December Preview', by: 'Unknown Promos', status: 'pending' },
-        { id: 'a3', kind: 'Venue', name: 'The Garden, Wuse 2', by: 'Hauwa Musa', status: 'pending' },
-      ],
-      flags: [
-        { id: 'f1', reason: 'Same ticket QR scanned at two gates', target: 'Order #A81C2', level: 'high', resolved: false },
-        { id: 'f2', reason: 'Organiser asked buyers to pay outside COORDINA', target: 'Unknown Promos', level: 'high', resolved: false },
-        { id: 'f3', reason: '15 refund requests in 1 hour', target: 'Rave on the Lagoon', level: 'med', resolved: false },
-      ],
+      admin: [],
+      flags: [],
 
       finishOnboarding: (p) => set({ ...p, onboarded: true }),
       setTheme: (theme) => set({ theme }), setBudget: (budget) => set({ budget }), setCity: (city) => set({ city }),
@@ -233,9 +230,72 @@ export const useStore = create<State>()(
   ),
 );
 
-export const useAllEvents = () => {
+export const useAllEvents = (): CEvent[] => {
   const custom = useStore((s) => s.customEvents);
-  return useMemo(() => [...custom, ...seedEvents], [custom]);
+  const dbEvents = useQuery(api.events.list, {});
+
+  return useMemo(() => {
+    if (dbEvents && dbEvents.length > 0) {
+      const mapped: CEvent[] = dbEvents.map((e: any) => {
+        const areaCoord = AREAS[e.area] ?? { lat: 9.0765, lng: 7.4698 };
+        return {
+          id: e._id,
+          title: e.title,
+          category: e.category as Category,
+          vibe: e.vibe as Vibe,
+          city: e.city as City,
+          area: e.area,
+          spaceId: e.spaceId ?? '',
+          organiserId: e.organizerId,
+          start: e.start,
+          end: e.end,
+          image: e.image,
+          description: e.description,
+          tiers: e.tiers,
+          lat: areaCoord.lat,
+          lng: areaCoord.lng,
+          verificationStatus: e.verificationStatus as VerificationStatus,
+        };
+      });
+      const dbIds = new Set(mapped.map((m) => m.id));
+      const extras = custom.filter((c) => !dbIds.has(c.id));
+      return [...mapped, ...extras];
+    }
+    return [...custom, ...seedEvents];
+  }, [dbEvents, custom]);
+};
+
+export const useAllSpaces = (): Space[] => {
+  const dbSpaces = useQuery(api.spaces.list, {});
+
+  return useMemo(() => {
+    if (dbSpaces && dbSpaces.length > 0) {
+      return dbSpaces.map((s: any) => ({
+        id: s._id,
+        name: s.name,
+        type: s.type as any,
+        city: s.city as City,
+        area: s.area,
+        lat: s.lat,
+        lng: s.lng,
+        verified: s.verified,
+        rating: s.rating,
+        reviews: [
+          { who: 'Verified Reviewer', rating: s.rating, text: 'Clean layout, verified amenities.' },
+        ],
+        hours: '10am – 11pm daily',
+        image: s.image,
+        photos: [s.image],
+        about: `${s.name} in ${s.area}, ${s.city}. Capacity: ${s.capacity}.`,
+        safety: 'Security verified by COORDINA.',
+        crowd: (s.crowd as any) || 'Moderate',
+        bookingFrom: 35000,
+        amenities: s.amenities,
+        capacity: s.capacity,
+      }));
+    }
+    return seedSpaces;
+  }, [dbSpaces]);
 };
 
 export const usePlanItems = (): PlanItem[] => {

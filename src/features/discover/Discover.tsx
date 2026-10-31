@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
-import { CATEGORIES, CATEGORY_ICON, minPrice, spaces, AREAS } from '../../data/mock';
+import { CATEGORIES, CATEGORY_ICON, minPrice, AREAS } from '../../data/mock';
 import { BottomSheet, Button, Chip, EmptyState, Cover, Stars, VerifiedBadge } from '../../design-system/ui';
-import { useAllEvents, useStore } from '../../store';
+import { useAllEvents, useAllSpaces, useStore } from '../../store';
 import { bucket, naira } from '../../lib/format';
 import { EventCard } from './EventCard';
 import type { Category, Vibe } from '../../types';
@@ -26,6 +26,7 @@ export default function Discover() {
   const city = useStore((s) => s.city);
   const setCity = useStore((s) => s.setCity);
   const all = useAllEvents();
+  const spaces = useAllSpaces();
 
   const areas = Object.keys(AREAS).filter((a) => AREAS[a].city === city);
   const list = useMemo(

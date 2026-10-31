@@ -6,7 +6,7 @@ import { getSpace, minPrice } from '../../data/mock';
 import { Cover } from '../../design-system/ui';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { fmtDate, fmtTime, naira } from '../../lib/format';
-import { useStore } from '../../store';
+import { useStore, useAllSpaces } from '../../store';
 import { flyToCart, toast } from '../../lib/fx';
 
 export function useAddToPlan() {
@@ -31,7 +31,8 @@ export function EventCard({
   const add = useAddToPlan();
   const inCart = useStore((s) => s.cart.some((c) => c.eventId === event.id));
   const ref = useRef<HTMLDivElement>(null);
-  const sp = getSpace(event.spaceId);
+  const allSpaces = useAllSpaces();
+  const sp = allSpaces.find((s) => s.id === event.spaceId) ?? getSpace(event.spaceId);
   const low = event.tiers.some((t) => t.remaining > 0 && t.remaining <= 10);
   const p = minPrice(event);
   const d = new Date(event.start);

@@ -9,7 +9,7 @@ export const seedDatabase = mutation({
     }
 
     // 1. Seed System Admin User
-    const adminUserId = await ctx.db.insert('users', {
+    await ctx.db.insert('users', {
       name: 'COORDINA Admin',
       email: 'admin@coordina.app',
       role: 'admin',
@@ -114,7 +114,7 @@ export const seedDatabase = mutation({
       createdAt: Date.now(),
     });
 
-    const space3 = await ctx.db.insert('spaces', {
+    await ctx.db.insert('spaces', {
       name: 'Maitama Glass Pavilion',
       type: 'Lounge',
       city: 'Abuja',

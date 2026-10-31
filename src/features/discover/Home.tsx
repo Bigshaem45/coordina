@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
-import { CATEGORIES, CATEGORY_ICON, getSpace, minPrice, spaces } from '../../data/mock';
+import { CATEGORIES, CATEGORY_ICON, minPrice } from '../../data/mock';
 import { Cover, Section, Stars, VerifiedBadge, ErrorState } from '../../design-system/ui';
-import { useAllEvents, useStore } from '../../store';
+import { useAllEvents, useAllSpaces, useStore } from '../../store';
 import { bucket, fmtTime, naira } from '../../lib/format';
 import { EventCard, useAddToPlan } from './EventCard';
 import { Logo } from '../../design-system/Logo';
@@ -15,6 +15,7 @@ export default function Home() {
   const interests = useStore((s) => s.interests);
   const vibe = useStore((s) => s.vibe);
   const allEvents = useAllEvents();
+  const allSpaces = useAllSpaces();
   const all = useMemo(() => allEvents.filter((e) => e.city === city), [allEvents, city]);
   const nav = useNavigate();
   const add = useAddToPlan();
@@ -29,7 +30,8 @@ export default function Home() {
     .sort((a, b) => a.tiers[0].remaining / a.tiers[0].total - b.tiers[0].remaining / b.tiers[0].total)
     .slice(0, 6);
   const forYou = recommend(all, interests, vibe).slice(0, 4);
-  const verified = spaces.filter((s) => s.city === city && s.verified);
+  const verified = allSpaces.filter((s) => s.city === city && s.verified);
+  const getSpace = (id: string) => allSpaces.find((s) => s.id === id);
 
   return (
     <div className="w-full min-w-0 max-w-full overflow-x-hidden pb-8 pt-4 md:pt-6">
