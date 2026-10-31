@@ -43,6 +43,8 @@ interface State {
   verifications: EventVerificationRecord[]; auditLogs: AuditLog[];
   blacklistedIdentities: BlacklistedIdentity[];
   cartOpen: boolean; swapNotice: string | null;
+  verifyModalOpen: boolean;
+  setVerifyModalOpen: (b: boolean) => void;
 
   finishOnboarding: (p: { city: City; interests: Category[]; budget: number; vibe: Vibe }) => void;
   setTheme: (t: 'dark' | 'light') => void; setBudget: (n: number) => void; setCity: (c: City) => void;
@@ -102,11 +104,12 @@ export const useStore = create<State>()(
         const e = email.trim().toLowerCase();
         const cleanCode = code.trim();
         const a = get().accounts.find((x) => x.email === e);
-        if (!a) return false;
-        if (a.emailVerificationCode === cleanCode || cleanCode === '123456' || cleanCode === '1234') {
+        const matches = (a && a.emailVerificationCode === cleanCode) || cleanCode === '123456' || cleanCode === '1234';
+        if (matches) {
           set((s) => ({
             accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, emailVerified: true, emailVerificationCode: undefined } : acc)),
             user: s.user && s.user.email === e ? { ...s.user, emailVerified: true } : s.user,
+            verifyModalOpen: false,
           }));
           return true;
         }
@@ -114,12 +117,24 @@ export const useStore = create<State>()(
       },
       requestEmailVerification: (email) => {
         const e = email.trim().toLowerCase();
-        const a = get().accounts.find((x) => x.email === e);
-        if (!a) return null;
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        set((s) => ({
-          accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, emailVerificationCode: code } : acc)),
-        }));
+        const existing = get().accounts.find((x) => x.email === e);
+        if (existing) {
+          set((s) => ({
+            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, emailVerificationCode: code } : acc)),
+          }));
+        } else {
+          const u = get().user;
+          const newAcc: Account = {
+            name: u?.name || 'Explorer',
+            email: e,
+            password: '',
+            role: u?.role || 'attendee',
+            emailVerified: false,
+            emailVerificationCode: code,
+          };
+          set((s) => ({ accounts: [...s.accounts, newAcc] }));
+        }
         return code;
       },
       requestPasswordReset: (email) => {
@@ -155,6 +170,8 @@ export const useStore = create<State>()(
       theme: 'light', lowData: false,
       cart: [], tickets: [], orders: [], customEvents: [], squads: [], bookings: [],
       savedCard: null, reports: [], checkedIn: {}, cartOpen: false, swapNotice: null,
+      verifyModalOpen: false,
+      setVerifyModalOpen: (verifyModalOpen) => set({ verifyModalOpen }),
       verifications: initialVerifications,
       auditLogs: initialAuditLogs,
       blacklistedIdentities: [

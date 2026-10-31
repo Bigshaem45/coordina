@@ -26,7 +26,18 @@ export default function Profile() {
             {(s.user?.name ?? 'Y')[0]?.toUpperCase()}
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{s.user?.name ?? 'Guest Explorer'}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">{s.user?.name ?? 'Guest Explorer'}</h1>
+              {s.user?.emailVerified ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                  <Icon name="verified" className="text-xs" /> Verified
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full border border-coral-500/50 bg-coral-500/10 px-2 py-0.5 text-[11px] font-bold text-coral-600 dark:text-coral-400 animate-pulse">
+                  <Icon name="gpp_bad" className="text-xs" /> Unverified
+                </span>
+              )}
+            </div>
             {s.user?.email && <p className="muted text-xs">{s.user.email}</p>}
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Badge tone="brand">{s.city}</Badge>
@@ -36,6 +47,49 @@ export default function Profile() {
           </div>
         </div>
       </Card>
+
+      {/* Account Verification Card (Shown Boldly if Unverified) */}
+      {s.user && !s.user.emailVerified && (
+        <Card className="border-2 border-amber-500/50 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white shadow-md shadow-amber-500/20">
+                <Icon name="mark_email_read" className="text-2xl" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">Email Verification Required</h2>
+                  <Badge tone="coral">Restrictions Active</Badge>
+                </div>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Your email (<strong className="text-slate-900 dark:text-slate-100">{s.user?.email}</strong>) has not been verified.
+                  To protect against ticket scalping and fraudulent listings, several key platform features are restricted:
+                </p>
+                <div className="mt-2.5 flex flex-wrap gap-2 text-[11px]">
+                  <span className="rounded-lg bg-black/5 dark:bg-white/5 px-2 py-1 text-slate-700 dark:text-slate-300">
+                    🚫 Ticket Purchases &amp; Checkout
+                  </span>
+                  <span className="rounded-lg bg-black/5 dark:bg-white/5 px-2 py-1 text-slate-700 dark:text-slate-300">
+                    🚫 Organiser Event Publishing
+                  </span>
+                  <span className="rounded-lg bg-black/5 dark:bg-white/5 px-2 py-1 text-slate-700 dark:text-slate-300">
+                    🚫 Payout Settlements
+                  </span>
+                  <span className="rounded-lg bg-black/5 dark:bg-white/5 px-2 py-1 text-slate-700 dark:text-slate-300">
+                    🚫 Squad Voting
+                  </span>
+                </div>
+              </div>
+            </div>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 shadow-md shadow-amber-600/20"
+              onClick={() => s.setVerifyModalOpen(true)}
+            >
+              <Icon name="verified" /> Request Verification
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Preferences */}
       <Card className="divide-y divide-slate-100 px-5 dark:divide-slate-800">

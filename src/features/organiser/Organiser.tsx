@@ -38,6 +38,7 @@ export default function Organiser() {
   const [tab, setTab] = useState<Tab>('Dashboard');
   const user = useStore((s) => s.user);
   const upgradeToOrganiser = useStore((s) => s.upgradeToOrganiser);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
 
   // Access Restriction Gate: Not signed in
   if (!user) {
@@ -96,6 +97,36 @@ export default function Organiser() {
 
   return (
     <div className="px-4 py-6 md:px-0">
+      {/* Bold Organiser Verification Alert */}
+      {!user.emailVerified && (
+        <div className="mb-5 rounded-2xl border-2 border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 p-4.5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm font-bold">
+                <Icon name="gpp_bad" className="text-xl" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Organiser Email Unverified</h3>
+                  <Badge tone="coral">Action Required</Badge>
+                </div>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Your organizer email (<strong className="text-slate-900 dark:text-slate-100">{user.email}</strong>) is unverified.
+                  Event publishing, gate scanner access, and bank payout settlements are restricted until verified.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold shrink-0 shadow-sm"
+              onClick={() => setVerifyModalOpen(true)}
+            >
+              <Icon name="mark_email_read" /> Request Verification
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Organiser Studio</h1>
@@ -312,6 +343,8 @@ function Dashboard() {
 
 function Create({ onDone }: { onDone: () => void }) {
   const add = useStore((s) => s.addCustomEvent);
+  const user = useStore((s) => s.user);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const allSpaces = useAllSpaces();
   const [f, setF] = useState({
     title: '',
@@ -330,6 +363,11 @@ function Create({ onDone }: { onDone: () => void }) {
   const postingFee = computeOrganiserPostingFee(tiers);
 
   const submit = async () => {
+    if (!user?.emailVerified) {
+      setVerifyModalOpen(true);
+      toast('Please verify your organizer email before publishing events.');
+      return;
+    }
     const a = AREAS[f.area];
     const start = new Date(`${f.date}T${f.start}`);
     let end = new Date(`${f.date}T${f.end}`);
@@ -593,9 +631,26 @@ function Create({ onDone }: { onDone: () => void }) {
         )}
       </div>
 
-      <Button full size="lg" disabled={!valid} onClick={submit}>
-        {postingFee.isFree ? `Pay ${naira(postingFee.postingFee)} & Publish Free Event` : 'Publish Event (Free to Post)'}
-      </Button>
+      {!user?.emailVerified ? (
+        <div className="space-y-2.5">
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+            <p className="font-semibold flex items-center gap-1.5">
+              <Icon name="lock" className="text-sm" />
+              <span>Email Verification Required</span>
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300">
+              Your account must be verified before publishing events to the public marketplace.
+            </p>
+          </div>
+          <Button full size="lg" className="bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-md shadow-amber-600/20" onClick={() => setVerifyModalOpen(true)}>
+            <Icon name="lock" /> Verify Email to Publish Event
+          </Button>
+        </div>
+      ) : (
+        <Button full size="lg" disabled={!valid} onClick={submit}>
+          {postingFee.isFree ? `Pay ${naira(postingFee.postingFee)} & Publish Free Event` : 'Publish Event (Free to Post)'}
+        </Button>
+      )}
     </Card>
   );
 }
@@ -605,6 +660,8 @@ function Scanner() {
 }
 
 function Payouts() {
+  const user = useStore((s) => s.user);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const [bankCode, setBankCode] = useState('058'); // GTBank default
   const [accountNumber, setAccountNumber] = useState('0123456789');
   const [verifying, setVerifying] = useState(false);
@@ -656,6 +713,11 @@ function Payouts() {
   };
 
   const handleInitiatePayout = async () => {
+    if (!user?.emailVerified) {
+      setVerifyModalOpen(true);
+      toast('Email verification required to process payouts.');
+      return;
+    }
     const amt = parseFloat(payoutAmount);
     if (!amt || amt <= 0) {
       toast('Please enter a valid payout amount');
@@ -824,21 +886,31 @@ function Payouts() {
               className={`${inputCls} pl-8`}
             />
           </div>
-          <Button
-            size="md"
-            disabled={transferring || !verifiedName || !payoutAmount || Number(payoutAmount) <= 0}
-            onClick={handleInitiatePayout}
-          >
-            {transferring ? (
-              <>
-                <Icon name="sync" className="animate-spin text-sm" /> Processing Transfer...
-              </>
-            ) : (
-              <>
-                <Icon name="send" className="text-sm" /> Disburse Funds via Paystack
-              </>
-            )}
-          </Button>
+          {!user?.emailVerified ? (
+            <Button
+              size="md"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-sm"
+              onClick={() => setVerifyModalOpen(true)}
+            >
+              <Icon name="lock" /> Verify Email to Withdraw
+            </Button>
+          ) : (
+            <Button
+              size="md"
+              disabled={transferring || !verifiedName || !payoutAmount || Number(payoutAmount) <= 0}
+              onClick={handleInitiatePayout}
+            >
+              {transferring ? (
+                <>
+                  <Icon name="sync" className="animate-spin text-sm" /> Processing Transfer...
+                </>
+              ) : (
+                <>
+                  <Icon name="send" className="text-sm" /> Disburse Funds via Paystack
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         {transferResult && (

@@ -13,6 +13,8 @@ export function SquadList() {
   const squads = useStore((s) => s.squads);
   const cart = useStore((s) => s.cart);
   const create = useStore((s) => s.createSquad);
+  const user = useStore((s) => s.user);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const all = useAllEvents();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
@@ -27,10 +29,36 @@ export function SquadList() {
           <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Squad Mode</h1>
           <p className="muted mt-0.5 text-sm">Plan together, vote on events, and split the bill transparently.</p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)}>
+        <Button
+          size="sm"
+          onClick={() => {
+            if (user && !user.emailVerified) {
+              setVerifyModalOpen(true);
+              toast('Please verify your email before creating a squad.');
+              return;
+            }
+            setOpen(true);
+          }}
+        >
           <Icon name="add" /> New Squad
         </Button>
       </div>
+
+      {user && !user.emailVerified && (
+        <Card className="mt-4 border-2 border-amber-500/40 bg-amber-500/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Icon name="lock" className="text-amber-600 text-lg" />
+              <p className="text-xs text-amber-900 dark:text-amber-200">
+                Email verification required to create squads and vote on event shortlists.
+              </p>
+            </div>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white" onClick={() => setVerifyModalOpen(true)}>
+              Verify Email
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {squads.length === 0 ? (
         <Card className="mt-6">
@@ -134,10 +162,21 @@ export function SquadDetail() {
   const vote = useStore((s) => s.vote);
   const addToCart = useStore((s) => s.addToCart);
   const addMember = useStore((s) => s.addMember);
+  const user = useStore((s) => s.user);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const all = useAllEvents();
   const nav = useNavigate();
   const [as, setAs] = useState('You');
   const [newName, setNewName] = useState('');
+
+  const handleVote = (eventId: string, yes: boolean) => {
+    if (user && !user.emailVerified) {
+      setVerifyModalOpen(true);
+      toast('Please verify your email address to cast votes in squads.');
+      return;
+    }
+    if (squad) vote(squad.id, as, eventId, yes);
+  };
 
   const [messages, setMessages] = useState<Array<{ id: string; sender: string; text: string; time: string }>>([
     { id: '1', sender: 'Host', text: 'Hey squad! Vote on your top pick for Saturday so we can lock tickets.', time: '14:20' },
@@ -269,10 +308,10 @@ export function SquadDetail() {
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button size="sm" variant={v === true ? 'primary' : 'outline'} onClick={() => vote(squad.id, as, e.id, true)}>
+                    <Button size="sm" variant={v === true ? 'primary' : 'outline'} onClick={() => handleVote(e.id, true)}>
                       <Icon name="thumb_up" className="text-sm" /> I am in
                     </Button>
-                    <Button size="sm" variant={v === false ? 'coral' : 'outline'} onClick={() => vote(squad.id, as, e.id, false)}>
+                    <Button size="sm" variant={v === false ? 'coral' : 'outline'} onClick={() => handleVote(e.id, false)}>
                       <Icon name="thumb_down" className="text-sm" /> Pass
                     </Button>
                   </div>

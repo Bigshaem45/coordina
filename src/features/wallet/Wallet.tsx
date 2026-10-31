@@ -15,6 +15,7 @@ export default function Wallet() {
   const all = useAllEvents();
   const transfer = useStore((s) => s.transferTicket);
   const refund = useStore((s) => s.refundTicket);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const [tab, setTab] = useState<'upcoming' | 'other'>('upcoming');
   const [view, setView] = useState<Ticket | null>(null);
   const [bright, setBright] = useState(false);
@@ -149,7 +150,19 @@ export default function Wallet() {
                       <Button size="sm" disabled={gone} onClick={() => setView(t)}>
                         <Icon name="qr_code_2" className="text-base" /> View QR
                       </Button>
-                      <Button size="sm" variant="outline" disabled={gone} onClick={() => setXfer(t)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={gone}
+                        onClick={() => {
+                          if (user && !user.emailVerified) {
+                            setVerifyModalOpen(true);
+                            toast('Email verification required to transfer tickets.');
+                            return;
+                          }
+                          setXfer(t);
+                        }}
+                      >
                         Transfer
                       </Button>
                     </div>

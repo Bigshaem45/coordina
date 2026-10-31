@@ -6,6 +6,7 @@ import { Toast, Button, Cover } from '../design-system/ui';
 import { Logo } from '../design-system/Logo';
 import { useStore, usePlanItems } from '../store';
 import { computeFees, naira } from '../lib/format';
+import { EmailVerificationModal } from '../components/EmailVerificationModal';
 
 const NAV = [
   { to: '/home', label: 'Home', icon: 'home', end: true },
@@ -34,6 +35,7 @@ export function Layout() {
   const count = useStore((s) => s.cart.length);
   const loc = useLocation();
   const setCartOpen = useStore((s) => s.setCartOpen);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const done = useCallback(() => setMsg(null), []);
 
   useEffect(() => {
@@ -146,6 +148,37 @@ export function Layout() {
         </div>
       </header>
 
+      {/* Bold Unverified Account Banner */}
+      {user && !user.emailVerified && (
+        <div className="sticky top-14 md:top-16 z-30 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white shadow-md border-b border-amber-700/40">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-xs font-medium">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-xs font-bold animate-pulse">
+                <Icon name="warning" className="text-base" />
+              </span>
+              <div>
+                <span className="font-bold tracking-wide uppercase text-[10px] bg-black/30 px-2 py-0.5 rounded-full mr-2">
+                  Email Unverified
+                </span>
+                <span>
+                  Account email <strong>{user.email}</strong> is unverified. Ticket purchases, squad voting, and organizer publishing are restricted.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={() => setVerifyModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-1 text-xs font-bold text-amber-900 shadow-sm transition hover:bg-amber-50 active:scale-95"
+              >
+                <Icon name="mark_email_read" className="text-sm text-amber-600" />
+                Request Verification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 md:px-6">
         <Outlet />
       </main>
@@ -194,6 +227,7 @@ export function Layout() {
 
       <CartDrawer />
       <Toast message={msg} onDone={done} />
+      <EmailVerificationModal />
     </div>
   );
 }

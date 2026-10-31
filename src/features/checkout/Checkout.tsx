@@ -8,6 +8,7 @@ import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 import { sendBookingConfirmationEmail } from '../../lib/email';
 import { payWithPaystack } from '../../lib/paystack';
+import { toast } from '../../lib/fx';
 
 type Method = 'Card' | 'Bank transfer' | 'USSD';
 
@@ -19,6 +20,8 @@ export default function Checkout() {
   const user = useStore((s) => s.user);
   const saved = useStore((s) => s.savedCard);
   const complete = useStore((s) => s.completeOrder);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+  const isUnverified = !user || !user.emailVerified;
   const [method, setMethod] = useState<Method>('Card');
   const [paying, setPaying] = useState(false);
   const [ussd, setUssd] = useState('GTBank');
@@ -92,6 +95,15 @@ export default function Checkout() {
   };
 
   const pay = async () => {
+    if (isUnverified) {
+      if (user) {
+        setVerifyModalOpen(true);
+        toast('Please verify your email address to complete ticket purchases.');
+      } else {
+        nav('/auth?mode=signin');
+      }
+      return;
+    }
     setPaying(true);
     const customerEmail = user?.email || 'attendee@coordina.app';
 
@@ -161,6 +173,43 @@ export default function Checkout() {
           </div>
         ))}
       </Card>
+
+      {/* Email Verification Blocker Banner */}
+      {isUnverified && (
+        <Card className="mt-4 border-2 border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm font-bold">
+                <Icon name="lock" className="text-xl" />
+              </span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Email Verification Required</h4>
+                  <span className="rounded-full bg-coral-500/20 px-2 py-0.5 text-[10px] font-bold text-coral-700 dark:text-coral-300">
+                    Checkout Restricted
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  {user ? (
+                    <>You must verify <strong>{user.email}</strong> before purchasing tickets to ensure offline cryptographic passes are tied to your identity.</>
+                  ) : (
+                    <>Sign in and verify your email before purchasing tickets.</>
+                  )}
+                </p>
+              </div>
+            </div>
+            {user ? (
+              <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 shadow-sm" onClick={() => setVerifyModalOpen(true)}>
+                <Icon name="verified" /> Verify Email Now
+              </Button>
+            ) : (
+              <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white shrink-0 shadow-sm" onClick={() => nav('/auth?mode=signin')}>
+                <Icon name="login" /> Sign In &amp; Verify
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
 
       {sub > 0 && (
         <Card className="mt-4 p-5">
@@ -324,9 +373,19 @@ export default function Checkout() {
             <p className="muted text-[11px]">Total due</p>
             <p className="text-lg font-bold text-slate-900 dark:text-white">{naira(f.total)}</p>
           </div>
-          <Button size="lg" className="px-8" disabled={paying || !cardOk} onClick={pay}>
-            {paying ? 'Confirming…' : sub === 0 ? 'Confirm Free RSVP' : `Pay ${naira(f.total)}`}
-          </Button>
+          {isUnverified ? (
+            <Button
+              size="lg"
+              className="px-6 bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-md shadow-amber-600/20"
+              onClick={pay}
+            >
+              <Icon name="lock" /> Verify Email to Pay
+            </Button>
+          ) : (
+            <Button size="lg" className="px-8" disabled={paying || !cardOk} onClick={pay}>
+              {paying ? 'Confirming…' : sub === 0 ? 'Confirm Free RSVP' : `Pay ${naira(f.total)}`}
+            </Button>
+          )}
         </div>
       </div>
     </div>
