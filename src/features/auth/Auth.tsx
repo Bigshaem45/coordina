@@ -6,6 +6,7 @@ import { Icon } from '../../design-system/Icon';
 import { useStore } from '../../store';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../../lib/email';
 
 export default function Auth() {
   const [params] = useSearchParams();
@@ -17,7 +18,7 @@ export default function Auth() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const { user, onboarded, signIn, signUp, socialSignIn, signOut } = useStore();
+  const { user, onboarded, signIn, signUp, signOut } = useStore();
   const nav = useNavigate();
 
   const emailOk = /^\S+@\S+\.\S+$/.test(email);
@@ -27,7 +28,10 @@ export default function Auth() {
     e.preventDefault();
     setError(null);
     setInfo(null);
-    if (mode === 'forgot') return setInfo(`If an account exists for ${email}, a reset link is on its way.`);
+    if (mode === 'forgot') {
+      sendPasswordResetEmail(email.trim().toLowerCase(), '');
+      return setInfo(`If an account exists for ${email}, a password reset link has been sent via email.`);
+    }
     setBusy(true);
     try {
       if (mode === 'signup') {
@@ -36,6 +40,7 @@ export default function Auth() {
           email: email.trim().toLowerCase(),
           role: 'attendee',
         });
+        sendWelcomeEmail(email.trim().toLowerCase(), name.trim());
       } else {
         await convex.mutation(api.auth.signIn, {
           email: email.trim().toLowerCase(),
@@ -56,20 +61,6 @@ export default function Auth() {
     } finally {
       setBusy(false);
     }
-  };
-
-  const handleSocial = async (provider: string) => {
-    const providerEmail = `user@${provider.toLowerCase()}.coordina.app`;
-    try {
-      await convex.mutation(api.auth.signIn, {
-        name: `${provider} Guest`,
-        email: providerEmail,
-      });
-    } catch (e) {
-      console.warn('Convex social auth sync:', e);
-    }
-    socialSignIn(provider);
-    nav(onboarded ? '/home' : '/onboarding');
   };
 
   const inputWrap = 'relative flex items-center';
@@ -237,36 +228,7 @@ export default function Auth() {
             </Button>
           </form>
 
-          {mode !== 'forgot' && (
-            <>
-              <div className="muted my-6 flex items-center gap-3 text-xs">
-                <hr className="flex-1 border-[var(--border)]" />
-                <span>Or continue with</span>
-                <hr className="flex-1 border-[var(--border)]" />
-              </div>
-
-              <div className="space-y-2.5">
-                  <Button
-                    full
-                    variant="outline"
-                    type="button"
-                    onClick={() => handleSocial('Apple')}
-                  >
-                    <Icon name="phone_iphone" className="text-base" /> Continue with Apple
-                  </Button>
-                    <Button
-                      full
-                      variant="outline"
-                      type="button"
-                      onClick={() => handleSocial('Google')}
-                    >
-                      <Icon name="public" className="text-base text-brand-500" /> Continue with Google
-                    </Button>
-                  </div>
-                </>
-          )}
-
-                <p className="muted mt-6 text-center text-sm">
+          <p className="muted mt-6 text-center text-sm">
                   {mode === 'signin' ? (
                     <>
                       Don’t have an account?{' '}

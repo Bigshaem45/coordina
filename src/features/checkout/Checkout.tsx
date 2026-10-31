@@ -6,6 +6,7 @@ import { useAllEvents, useStore } from '../../store';
 import { computeFees, fmtDate, naira } from '../../lib/format';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
+import { sendBookingConfirmationEmail } from '../../lib/email';
 
 type Method = 'Card' | 'Bank transfer' | 'USSD';
 
@@ -14,9 +15,9 @@ export default function Checkout() {
   const nav = useNavigate();
   const all = useAllEvents();
   const cart = useStore((s) => s.cart);
+  const user = useStore((s) => s.user);
   const saved = useStore((s) => s.savedCard);
   const complete = useStore((s) => s.completeOrder);
-  const [provider, setProvider] = useState<'Paystack' | 'Flutterwave'>('Paystack');
   const [method, setMethod] = useState<Method>('Card');
   const [paying, setPaying] = useState(false);
   const [ussd, setUssd] = useState('GTBank');
@@ -51,10 +52,13 @@ export default function Checkout() {
   const pay = async () => {
     setPaying(true);
     const o = complete(lines, f.total, f.fees, sub === 0 ? 'Free' : method);
+    const customerEmail = user?.email || 'attendee@coordina.app';
+    const customerName = user?.name || 'Guest Attendee';
+
     try {
       await convex.mutation(api.orders.createOrder, {
-        customerName: 'Guest Attendee',
-        customerEmail: 'attendee@coordina.app',
+        customerName,
+        customerEmail,
         transactionRef: o.id,
         paymentMethod: method === 'Card' ? 'card' : method === 'USSD' ? 'ussd' : 'transfer',
         items: rows.map((r) => ({
@@ -65,6 +69,19 @@ export default function Checkout() {
           price: r.tier.price,
           qty: r.qty,
         })),
+      });
+
+      // Send booking confirmation email via Resend
+      sendBookingConfirmationEmail({
+        to: customerEmail,
+        name: customerName,
+        orderId: o.id,
+        eventTitle: rows[0]?.event.title || 'COORDINA Live Event',
+        venueName: rows[0]?.event.area || 'Venue',
+        date: fmtDate(rows[0]?.event.start || new Date().toISOString()),
+        tierName: rows.map((r) => `${r.tier.name} (${r.qty})`).join(', '),
+        qty: rows.reduce((s, r) => s + r.qty, 0),
+        total: f.total,
       });
     } catch (e) {
       console.warn('Convex order sync:', e);
@@ -109,22 +126,12 @@ export default function Checkout() {
       {sub > 0 && (
         <Card className="mt-4 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Payment Gateway</h2>
-            <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-0.5 dark:border-slate-700 dark:bg-midnight-900">
-              {(['Paystack', 'Flutterwave'] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setProvider(p)}
-                  aria-pressed={provider === p}
-                  className={`rounded-lg px-3 py-1 text-xs font-medium transition ${provider === p
-                      ? 'bg-white text-slate-900 shadow-2xs dark:bg-slate-700 dark:text-white'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                    }`}
-                >
-                  {p}
-                </button>
-              ))}
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Payment Gateway</h2>
+              <p className="muted text-xs">Direct API integration via Paystack</p>
+            </div>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+              <Icon name="verified_user" className="text-sm" /> Secured by Paystack
             </div>
           </div>
 
@@ -159,7 +166,7 @@ export default function Checkout() {
             <div className="mt-4 space-y-2.5">
               {saved ? (
                 <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-700 dark:bg-midnight-900 dark:text-slate-300">
-                  Paying with saved card <strong>{saved}</strong> via {provider}.
+                  Paying with saved card <strong>{saved}</strong> via Paystack.
                 </p>
               ) : (
                 <>
@@ -196,7 +203,7 @@ export default function Checkout() {
           {method === 'Bank transfer' && (
             <div className="mt-4 rounded-xl border border-[var(--border)] bg-slate-50/70 p-3.5 text-xs leading-relaxed dark:bg-midnight-900">
               Transfer <strong className="text-slate-900 dark:text-white">{naira(f.total)}</strong> to{' '}
-              <strong className="text-slate-900 dark:text-white">Wema Bank · 7912 345 678</strong> (COORDINA / {provider}). Valid for 30 minutes.
+              <strong className="text-slate-900 dark:text-white">Titan Trust Bank · 0293 841 029</strong> (COORDINA / Paystack Virtual Account). Valid for 30 minutes.
             </div>
           )}
 

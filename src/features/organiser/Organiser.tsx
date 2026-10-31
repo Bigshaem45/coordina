@@ -9,6 +9,7 @@ import { fmtDate, fmtTime, naira, computeOrganiserPostingFee, FREE_EVENT_RATE_PE
 import { toast } from '../../lib/fx';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
+import { sendVenueConfirmationRequestEmail } from '../../lib/email';
 import type { Category, CEvent, Vibe, EventVerificationRecord } from '../../types';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { calculateRiskAssessment } from '../../lib/verification';
@@ -751,6 +752,14 @@ function OrganizerVerificationPortal() {
     };
 
     submitForVerification(record);
+    sendVenueConfirmationRequestEmail({
+      venueEmail: venueEmail.trim(),
+      venueName: record.venueName,
+      eventTitle: selectedEvent.title,
+      organizerName: record.organizerName,
+      date: fmtDate(selectedEvent.start),
+      token,
+    });
     toast('Event submitted for remote verification! Venue confirmation email sent.');
   };
 

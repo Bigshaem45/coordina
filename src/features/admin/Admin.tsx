@@ -6,6 +6,7 @@ import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { useStore } from '../../store';
 import { toast } from '../../lib/fx';
 import { convex } from '../../lib/convex';
+import { sendVerificationStatusEmail } from '../../lib/email';
 import type { EventVerificationRecord, VerificationStatus } from '../../types';
 
 type AdminTab = 'Verification Desk' | 'Risk Engine' | 'Audit Logs' | 'Fraud & Alerts' | 'Analytics';
@@ -46,6 +47,15 @@ export default function Admin() {
 
   const handleDecision = async (id: string, status: VerificationStatus) => {
     reviewVerification(id, status, reviewNote.trim() || undefined);
+    if (selectedRecord) {
+      sendVerificationStatusEmail({
+        to: 'contact@eclipseliveafrica.com',
+        organizerName: selectedRecord.organizerName,
+        eventTitle: selectedRecord.eventTitle,
+        status,
+        reviewerNotes: reviewNote.trim() || undefined,
+      });
+    }
     try {
       await convex.mutation('verification:reviewEvent' as any, {
         verificationId: id.startsWith('vr-') ? undefined : (id as any),
