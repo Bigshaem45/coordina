@@ -5,6 +5,7 @@ import { Badge, Button, Card, Chip } from '../../design-system/ui';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { useStore } from '../../store';
 import { toast } from '../../lib/fx';
+import { convex } from '../../lib/convex';
 import type { EventVerificationRecord, VerificationStatus } from '../../types';
 
 type AdminTab = 'Verification Desk' | 'Risk Engine' | 'Audit Logs' | 'Fraud & Alerts' | 'Analytics';
@@ -19,6 +20,20 @@ export default function Admin() {
   const [selectedRecord, setSelectedRecord] = useState<EventVerificationRecord | null>(null);
   const [reviewNote, setReviewNote] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [isSeeding, setIsSeeding] = useState(false);
+
+  const handleSeedDatabase = async () => {
+    setIsSeeding(true);
+    try {
+      const res = (await convex.mutation('seed:seedDatabase' as any, {})) as any;
+      toast(res?.message || 'Database seeded successfully!');
+    } catch (err: any) {
+      console.error('Seed error:', err);
+      toast(err?.message || 'Failed to seed database. Check Convex deployment URL.');
+    } finally {
+      setIsSeeding(false);
+    }
+  };
 
   const pendingCount = verifications.filter((v) => v.status === 'Verification Pending').length;
   const highRiskCount = verifications.filter((v) => v.riskAssessment.level === 'High').length;
@@ -46,6 +61,16 @@ export default function Admin() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleSeedDatabase}
+            disabled={isSeeding}
+            className="flex items-center gap-1.5"
+          >
+            <Icon name={isSeeding ? 'hourglass_top' : 'database'} className="text-base" />
+            <span>{isSeeding ? 'Seeding...' : 'Seed Cloud DB'}</span>
+          </Button>
           <Badge tone="brand">Compliance Desk · Abuja/Lagos</Badge>
         </div>
       </div>
