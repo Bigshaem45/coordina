@@ -14,6 +14,7 @@ import type { Category, CEvent, Vibe, EventVerificationRecord } from '../../type
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { calculateRiskAssessment } from '../../lib/verification';
 import GateScanner from '../wallet/GateScanner';
+import FaceLivenessScanner, { type BiometricScanResult } from './FaceLivenessScanner';
 import {
   COMMON_NIGERIAN_BANKS,
   resolveAccount,
@@ -341,6 +342,14 @@ function Create({ onDone }: { onDone: () => void }) {
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Create New Event</h2>
         <Badge tone="brand">{f.category}</Badge>
+      </div>
+
+      {/* Basic Verification Notice */}
+      <div className="flex items-center justify-between rounded-xl border border-brand-500/20 bg-brand-50/60 p-3 text-xs text-brand-900 dark:border-brand-500/30 dark:bg-brand-950/30 dark:text-brand-200">
+        <div className="flex items-center gap-2">
+          <Icon name="verified_user" className="text-brand-500 text-base shrink-0" />
+          <span>Basic Planner Verification: All event organizers must complete CAC, Director NIN, and Live Face Liveness Scan in the Verification tab to earn verified badges.</span>
+        </div>
       </div>
 
       <Cover gradient={CATEGORY_PHOTO[f.category]} category={f.category} label={f.category} className="h-40 w-full rounded-2xl" />
@@ -854,6 +863,7 @@ function OrganizerVerificationPortal() {
   const [otpVerified, setOtpVerified] = useState(true);
   const [venueEmail, setVenueEmail] = useState('contact@wuseartsgallery.ng');
   const [venuePhone, setVenuePhone] = useState('+234 809 111 2233');
+  const [biometricScan, setBiometricScan] = useState<BiometricScanResult | null>(null);
 
   const selectedEvent = mine.find((e) => e.id === selectedEventId) ?? mine[0];
   const activeVerifications = verifications.filter((v) => v.organizerId === 'org1' || v.organizerId === 'org2');
@@ -863,6 +873,15 @@ function OrganizerVerificationPortal() {
     phone,
     email: venueEmail,
   });
+
+  const isKycComplete = Boolean(
+    cac.trim().length > 3 &&
+    director.trim().length > 2 &&
+    nin.trim().length > 5 &&
+    otpVerified &&
+    biometricScan?.verified &&
+    venueEmail.trim().length > 5
+  );
 
   // Compute live risk assessment preview
   const liveRisk = calculateRiskAssessment({
@@ -886,6 +905,11 @@ function OrganizerVerificationPortal() {
       return;
     }
 
+    if (!biometricScan?.verified) {
+      toast('Face Scan Required: You must pass the Live Facial Biometric Scan before submitting.');
+      return;
+    }
+
     const token = 'tok_' + Math.random().toString(36).slice(2, 10);
     const id = 'vr-' + Date.now();
 
@@ -905,6 +929,11 @@ function OrganizerVerificationPortal() {
         bvnNinVerified: true,
         phoneOtpVerified: true,
         directorName: director.trim(),
+        faceBiometricVerified: biometricScan?.verified ?? false,
+        faceSnapshotUrl: biometricScan?.faceSnapshotUrl,
+        biometricToken: biometricScan?.biometricToken,
+        biometricConfidence: biometricScan?.confidence,
+        biometricScannedAt: biometricScan?.scannedAt,
       },
       documents: [
         {
@@ -1179,6 +1208,63 @@ function OrganizerVerificationPortal() {
             </div>
           </div>
 
+          {/* MANDATORY LIVE FACIAL BIOMETRIC SCANNER */}
+          <FaceLivenessScanner
+            directorName={director}
+            nin={nin}
+            onComplete={(res) => {
+              setBiometricScan(res);
+              toast('Biometric liveness verified! Director face authenticated.');
+            }}
+            initialSnapshot={biometricScan?.faceSnapshotUrl}
+          />
+
+          {/* BASIC PLANNER VERIFICATION CHECKLIST */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-midnight-950/40">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Basic Planner Verification Requirements (All Mandatory)
+            </h4>
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2 text-xs">
+              <div className="flex items-center gap-2">
+                <Icon
+                  name={cac.trim().length > 3 ? 'check_circle' : 'radio_button_unchecked'}
+                  className={cac.trim().length > 3 ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
+                />
+                <span>CAC Corporate Registration ({cac || 'Required'})</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Icon
+                  name={nin.trim().length > 5 ? 'check_circle' : 'radio_button_unchecked'}
+                  className={nin.trim().length > 5 ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
+                />
+                <span>Director NIN/BVN Validated</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Icon
+                  name={otpVerified ? 'check_circle' : 'radio_button_unchecked'}
+                  className={otpVerified ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
+                />
+                <span>Termii SMS OTP Phone Verified</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Icon
+                  name={biometricScan?.verified ? 'check_circle' : 'warning'}
+                  className={biometricScan?.verified ? 'text-emerald-500 text-sm' : 'text-rose-500 text-sm'}
+                />
+                <span className={biometricScan?.verified ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
+                  Facial Biometric Scan {biometricScan?.verified ? '(Passed)' : '(Action Required)'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 sm:col-span-2">
+                <Icon
+                  name={venueEmail.trim().length > 5 ? 'check_circle' : 'radio_button_unchecked'}
+                  className={venueEmail.trim().length > 5 ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
+                />
+                <span>Venue Manager Agreement Token ({venueEmail})</span>
+              </div>
+            </div>
+          </div>
+
           {/* Live Risk Engine Assessment Score Preview */}
           <div className="rounded-2xl border border-brand-500/30 bg-brand-500/5 p-4 dark:bg-brand-500/10">
             <div className="flex items-center justify-between">
@@ -1209,12 +1295,16 @@ function OrganizerVerificationPortal() {
             full
             size="lg"
             type="submit"
-            disabled={blacklistStatus.blacklisted}
-            variant={blacklistStatus.blacklisted ? 'ghost' : 'primary'}
+            disabled={!isKycComplete || blacklistStatus.blacklisted}
+            variant={!isKycComplete || blacklistStatus.blacklisted ? 'ghost' : 'primary'}
           >
             {blacklistStatus.blacklisted
               ? `Verification Blocked (${blacklistStatus.matchedField} Blacklisted)`
-              : 'Submit for Remote Verification'}
+              : !biometricScan?.verified
+                ? 'Facial Biometric Liveness Scan Required'
+                : !isKycComplete
+                  ? 'Complete All Mandatory Verification Requirements'
+                  : 'Submit for Remote Verification'}
           </Button>
         </form>
       </Card>

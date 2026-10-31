@@ -194,23 +194,56 @@ export async function sendVenueConfirmationRequestEmail(params: {
 }
 
 // 4. Password Reset Email
-export async function sendPasswordResetEmail(to: string, name: string) {
-  const resetUrl = `https://coordina-beta.vercel.app/auth?mode=reset&email=${encodeURIComponent(to)}`;
+export async function sendPasswordResetEmail(to: string, name: string, code?: string) {
+  const resetCode = code || Math.floor(100000 + Math.random() * 900000).toString();
+  const resetUrl = `https://coordina-beta.vercel.app/auth?mode=reset&email=${encodeURIComponent(to)}&code=${encodeURIComponent(resetCode)}`;
   const body = `
     <h2 style="margin-top: 0; font-size: 18px; color: #0f172a;">Password Reset Request</h2>
     <p>Hi ${name || 'there'},</p>
     <p>We received a request to reset your password for your COORDINA account associated with <strong>${to}</strong>.</p>
 
-    <a href="${resetUrl}" class="btn">Reset Password</a>
+    <div class="details-box" style="text-align: center; margin: 20px 0;">
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 6px;">Your 6-Digit Password Reset Code</p>
+      <span style="font-family: monospace; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #4f46e5;">${resetCode}</span>
+    </div>
+
+    <a href="${resetUrl}" class="btn">Reset Password Directly</a>
 
     <p style="font-size: 12px; color: #64748b; margin-top: 20px;">
-      If you did not request this reset, you can safely ignore this email. Your password will remain unchanged.
+      Enter the 6-digit code above on the reset screen, or click the button. If you did not request this reset, your account is safe and you can ignore this email.
     </p>
   `;
   return await sendEmail({
     to,
-    subject: 'Reset your COORDINA password',
+    subject: `Password Reset Code: ${resetCode} — COORDINA`,
     html: emailLayout('Password Reset', body),
+  });
+}
+
+// 5. Email Account Verification Email
+export async function sendEmailVerificationOtpEmail(to: string, name: string, code: string) {
+  const verifyUrl = `https://coordina-beta.vercel.app/auth?mode=verify&email=${encodeURIComponent(to)}&code=${encodeURIComponent(code)}`;
+  const body = `
+    <span class="badge" style="background: #e0e7ff; color: #3730a3;">Verify Your Email</span>
+    <h2 style="margin-top: 12px; font-size: 18px; color: #0f172a;">Confirm your email address</h2>
+    <p>Hi ${name || 'there'},</p>
+    <p>Thank you for joining COORDINA! To secure your account and activate your offline ticket wallet, please verify your email address using the 6-digit code below:</p>
+
+    <div class="details-box" style="text-align: center; margin: 20px 0;">
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 6px;">Your 6-Digit Verification Code</p>
+      <span style="font-family: monospace; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #4f46e5;">${code}</span>
+    </div>
+
+    <a href="${verifyUrl}" class="btn">Verify Email Address</a>
+
+    <p style="font-size: 12px; color: #64748b; margin-top: 20px;">
+      This verification code expires in 24 hours. If you didn't create an account on COORDINA, please disregard this email.
+    </p>
+  `;
+  return await sendEmail({
+    to,
+    subject: `Your Verification Code: ${code} — COORDINA`,
+    html: emailLayout('Verify Your Email', body),
   });
 }
 

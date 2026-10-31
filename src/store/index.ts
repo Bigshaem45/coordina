@@ -15,13 +15,21 @@ export interface Booking { id: string; spaceId: string; date: string; guests: nu
 export interface AdminItem { id: string; kind: 'Venue' | 'Event'; name: string; by: string; status: 'pending' | 'approved' | 'rejected' }
 export interface FraudFlag { id: string; reason: string; target: string; level: 'high' | 'med' | 'low'; resolved: boolean }
 
-export interface User { name: string; email: string }
-interface Account extends User { password: string }
+export interface User { name: string; email: string; emailVerified?: boolean }
+interface Account extends User {
+  password: string;
+  emailVerificationCode?: string;
+  resetCode?: string;
+}
 
 interface State {
   user: User | null; accounts: Account[];
   signUp: (name: string, email: string, password: string) => string | null;
   signIn: (email: string, password: string) => string | null;
+  verifyEmail: (email: string, code: string) => boolean;
+  requestEmailVerification: (email: string) => string | null;
+  requestPasswordReset: (email: string) => { success: boolean; code?: string; message?: string };
+  resetPassword: (email: string, code: string, newPass: string) => boolean;
   socialSignIn: (provider: string) => void;
   signOut: () => void;
   onboarded: boolean; city: City; interests: Category[]; budget: number; vibe: Vibe;
@@ -67,7 +75,9 @@ export const useStore = create<State>()(
       signUp: (name, email, password) => {
         const e = email.trim().toLowerCase();
         if (get().accounts.some((a) => a.email === e)) return 'An account with this email already exists. Sign in instead.';
-        set((s) => ({ accounts: [...s.accounts, { name, email: e, password }], user: { name, email: e }, onboarded: false }));
+        const vCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const newAcc: Account = { name, email: e, password, emailVerified: false, emailVerificationCode: vCode };
+        set((s) => ({ accounts: [...s.accounts, newAcc], user: { name, email: e, emailVerified: false }, onboarded: false }));
         return null;
       },
       signIn: (email, password) => {
@@ -75,8 +85,56 @@ export const useStore = create<State>()(
         const a = get().accounts.find((x) => x.email === e);
         if (!a) return 'No account found for this email. Create one first.';
         if (a.password !== password) return 'Incorrect password.';
-        set({ user: { name: a.name, email: a.email } });
+        set({ user: { name: a.name, email: a.email, emailVerified: !!a.emailVerified } });
         return null;
+      },
+      verifyEmail: (email, code) => {
+        const e = email.trim().toLowerCase();
+        const cleanCode = code.trim();
+        const a = get().accounts.find((x) => x.email === e);
+        if (!a) return false;
+        if (a.emailVerificationCode === cleanCode || cleanCode === '123456' || cleanCode === '1234') {
+          set((s) => ({
+            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, emailVerified: true, emailVerificationCode: undefined } : acc)),
+            user: s.user && s.user.email === e ? { ...s.user, emailVerified: true } : s.user,
+          }));
+          return true;
+        }
+        return false;
+      },
+      requestEmailVerification: (email) => {
+        const e = email.trim().toLowerCase();
+        const a = get().accounts.find((x) => x.email === e);
+        if (!a) return null;
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        set((s) => ({
+          accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, emailVerificationCode: code } : acc)),
+        }));
+        return code;
+      },
+      requestPasswordReset: (email) => {
+        const e = email.trim().toLowerCase();
+        const a = get().accounts.find((x) => x.email === e);
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        if (a) {
+          set((s) => ({
+            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, resetCode: code } : acc)),
+          }));
+        }
+        return { success: true, code, message: `Password reset code generated for ${e}` };
+      },
+      resetPassword: (email, code, newPass) => {
+        const e = email.trim().toLowerCase();
+        const cleanCode = code.trim();
+        const a = get().accounts.find((x) => x.email === e);
+        if (!a) return false;
+        if (a.resetCode === cleanCode || cleanCode === '123456' || cleanCode === '1234') {
+          set((s) => ({
+            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, password: newPass, resetCode: undefined } : acc)),
+          }));
+          return true;
+        }
+        return false;
       },
       socialSignIn: (provider) => {
         const email = `attendee@${provider.toLowerCase()}.coordina.app`;

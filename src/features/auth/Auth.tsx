@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../../design-system/ui';
 import { Logo } from '../../design-system/Logo';
@@ -6,56 +6,201 @@ import { Icon } from '../../design-system/Icon';
 import { useStore } from '../../store';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
-import { sendWelcomeEmail, sendPasswordResetEmail } from '../../lib/email';
+import { sendWelcomeEmail, sendPasswordResetEmail, sendEmailVerificationOtpEmail } from '../../lib/email';
+import { toast } from '../../lib/fx';
+
+type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset' | 'verify';
 
 export default function Auth() {
   const [params] = useSearchParams();
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(params.get('mode') === 'signup' ? 'signup' : 'signin');
+  const initialMode = (params.get('mode') as AuthMode) || 'signin';
+  const paramEmail = params.get('email') || '';
+  const paramCode = params.get('code') || '';
+
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(paramEmail);
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState(paramCode);
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const { user, onboarded, signIn, signUp, signOut } = useStore();
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  const {
+    user,
+    onboarded,
+    signIn,
+    signUp,
+    signOut,
+    verifyEmail,
+    requestEmailVerification,
+    requestPasswordReset,
+    resetPassword,
+  } = useStore();
   const nav = useNavigate();
 
+  useEffect(() => {
+    if (paramEmail && !email) setEmail(paramEmail);
+    if (paramCode && !verificationCode) setVerificationCode(paramCode);
+    if (params.get('mode')) setMode(params.get('mode') as AuthMode);
+  }, [params]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => setResendCooldown((p) => p - 1), 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
   const emailOk = /^\S+@\S+\.\S+$/.test(email);
-  const valid = mode === 'forgot' ? emailOk : emailOk && password.length >= 6 && (mode === 'signin' || name.trim().length > 1);
+
+  const isFormValid = () => {
+    if (mode === 'forgot') return emailOk;
+    if (mode === 'verify') return emailOk && verificationCode.trim().length >= 4;
+    if (mode === 'reset') return emailOk && verificationCode.trim().length >= 4 && password.length >= 6 && password === confirmPassword;
+    if (mode === 'signin') return emailOk && password.length >= 6;
+    if (mode === 'signup') return emailOk && password.length >= 6 && name.trim().length > 1;
+    return false;
+  };
+
+  const handleResendVerification = async () => {
+    if (!emailOk || resendCooldown > 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const code = requestEmailVerification(email) || '123456';
+      await sendEmailVerificationOtpEmail(email.trim().toLowerCase(), name.trim() || 'Explorer', code);
+      setResendCooldown(45);
+      setInfo(`New 6-digit verification code sent to ${email}.`);
+      toast('Verification code sent to your email.');
+    } catch {
+      setInfo(`New code generated: 123456 (demo fallback active).`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setInfo(null);
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. FORGOT PASSWORD MODE
     if (mode === 'forgot') {
-      sendPasswordResetEmail(email.trim().toLowerCase(), '');
-      return setInfo(`If an account exists for ${email}, a password reset link has been sent via email.`);
+      setBusy(true);
+      try {
+        const resetRes = requestPasswordReset(cleanEmail);
+        const code = resetRes.code || '123456';
+        await sendPasswordResetEmail(cleanEmail, '', code);
+        setInfo(`Password reset code has been sent to ${cleanEmail}. Enter the code below to set your new password.`);
+        setMode('reset');
+      } catch (err: any) {
+        setError(err?.message || 'Could not send reset code. Please try again.');
+      } finally {
+        setBusy(false);
+      }
+      return;
     }
+
+    // 2. PASSWORD RESET SUBMISSION MODE
+    if (mode === 'reset') {
+      if (password !== confirmPassword) {
+        setError('Passwords do not match. Please re-enter.');
+        return;
+      }
+      setBusy(true);
+      try {
+        const ok = resetPassword(cleanEmail, verificationCode.trim(), password);
+        if (!ok) {
+          setError('Invalid or expired reset code. Please check your email or request a new code.');
+          return;
+        }
+        toast('Password reset successfully! You can now sign in.');
+        setInfo('Your password has been updated. Please sign in with your new password.');
+        setPassword('');
+        setConfirmPassword('');
+        setMode('signin');
+      } catch (err: any) {
+        setError(err?.message || 'Failed to reset password.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // 3. EMAIL VERIFICATION MODE
+    if (mode === 'verify') {
+      setBusy(true);
+      try {
+        const ok = verifyEmail(cleanEmail, verificationCode.trim());
+        if (!ok) {
+          setError('Invalid verification code. Enter the 6-digit code sent to your inbox or use 123456.');
+          return;
+        }
+        toast('Email verified successfully! Welcome to COORDINA.');
+        nav(onboarded ? '/home' : '/onboarding');
+      } catch (err: any) {
+        setError(err?.message || 'Verification failed. Please try again.');
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    // 4. SIGN UP & SIGN IN MODES
     setBusy(true);
     try {
       if (mode === 'signup') {
-        await convex.mutation(api.auth.signUp, {
-          name: name.trim(),
-          email: email.trim().toLowerCase(),
-          role: 'attendee',
-        });
-        sendWelcomeEmail(email.trim().toLowerCase(), name.trim());
-      } else {
+        const vCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+        try {
+          await convex.mutation(api.auth.signUp, {
+            name: name.trim(),
+            email: cleanEmail,
+            role: 'attendee',
+          });
+        } catch (cErr) {
+          console.warn('Convex auth signup fallback:', cErr);
+        }
+
+        const localErr = signUp(name.trim(), cleanEmail, password);
+        if (localErr) {
+          setError(localErr);
+          return;
+        }
+
+        // Send Welcome and Email Verification OTPs
+        sendWelcomeEmail(cleanEmail, name.trim());
+        sendEmailVerificationOtpEmail(cleanEmail, name.trim(), vCode);
+
+        toast('Account created! A verification code was sent to your email.');
+        setInfo(`We've sent a 6-digit verification code to ${cleanEmail}. Enter it below to activate your account.`);
+        setMode('verify');
+        return;
+      }
+
+      // SIGN IN
+      try {
         await convex.mutation(api.auth.signIn, {
-          email: email.trim().toLowerCase(),
+          email: cleanEmail,
           name: name.trim() || undefined,
         });
+      } catch (cErr) {
+        console.warn('Convex auth signin fallback:', cErr);
       }
-      const err = mode === 'signin' ? signIn(email, password) : signUp(name.trim(), email, password);
+
+      const err = signIn(cleanEmail, password);
       if (err) {
         setError(err);
       } else {
         nav(onboarded ? '/home' : '/onboarding');
       }
     } catch (err: any) {
-      console.warn('Convex auth sync:', err);
-      const localErr = mode === 'signin' ? signIn(email, password) : signUp(name.trim(), email, password);
+      console.warn('Auth processing error:', err);
+      const localErr = mode === 'signin' ? signIn(cleanEmail, password) : signUp(name.trim(), cleanEmail, password);
       if (localErr) setError(localErr);
       else nav(onboarded ? '/home' : '/onboarding');
     } finally {
@@ -83,16 +228,20 @@ export default function Auth() {
         </Link>
 
         <div className="relative z-10 max-w-md">
-          <h2 className="text-4xl font-bold leading-tight text-white">
-            A place for unforgettable nights &amp; curated spaces.
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs backdrop-blur-md">
+            <Icon name="verified_user" className="text-emerald-400" />
+            <span>Secure Nigerian Identity &amp; Escrow</span>
+          </div>
+          <h2 className="mt-4 text-4xl font-bold leading-tight text-white">
+            A place for unforgettable nights &amp; verified spaces.
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-slate-300">
-            Discover verified venues, build a clash-free itinerary, and store all your tickets in one minimalist wallet.
+            Discover verified venues, build clash-free weekend itineraries, and access cryptographically secure offline tickets across Abuja and Lagos.
           </p>
         </div>
       </div>
 
-      {/* Mobile Top Photo Banner + Clean Form */}
+      {/* Auth Content & Form */}
       <div className="flex min-h-screen flex-col justify-center px-6 py-10 md:col-span-6 lg:col-span-5 lg:px-12">
         <div className="mx-auto w-full max-w-sm">
           <div className="mb-8 flex items-center justify-between md:hidden">
@@ -105,20 +254,35 @@ export default function Auth() {
           </div>
 
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {mode === 'signin' ? 'Hey! Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset password'}
+            {mode === 'signin' && 'Hey! Welcome back'}
+            {mode === 'signup' && 'Create your account'}
+            {mode === 'forgot' && 'Reset your password'}
+            {mode === 'reset' && 'Create new password'}
+            {mode === 'verify' && 'Verify your email'}
           </h1>
           <p className="muted mt-1 text-sm">
-            {mode === 'signin'
-              ? 'Sign in to access your saved plan and tickets.'
-              : mode === 'signup'
-                ? 'Join COORDINA to discover events near you.'
-                : 'Enter your email and we will send a recovery link.'}
+            {mode === 'signin' && 'Sign in to access your offline ticket passes and itinerary.'}
+            {mode === 'signup' && 'Join COORDINA to explore verified events and curated lounges.'}
+            {mode === 'forgot' && 'Enter your account email to receive a 6-digit recovery code.'}
+            {mode === 'reset' && 'Enter the 6-digit code from your email and your new password.'}
+            {mode === 'verify' && `We sent a 6-digit verification code to ${email || 'your inbox'}.`}
           </p>
 
           {user && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-brand-200 bg-brand-50/80 p-3.5 text-xs dark:border-brand-900/60 dark:bg-brand-950/40">
               <div className="min-w-0">
-                <p className="font-semibold text-brand-950 dark:text-brand-200">Signed in as {user.name}</p>
+                <p className="font-semibold text-brand-950 dark:text-brand-200 flex items-center gap-1.5">
+                  Signed in as {user.name}
+                  {user.emailVerified ? (
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.2 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                      ✓ Verified
+                    </span>
+                  ) : (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                      Unverified
+                    </span>
+                  )}
+                </p>
                 <p className="muted truncate">{user.email}</p>
               </div>
               <div className="flex items-center gap-2">
@@ -133,6 +297,7 @@ export default function Auth() {
           )}
 
           <form onSubmit={submit} className="mt-6 space-y-3.5" noValidate>
+            {/* FULL NAME (SIGNUP ONLY) */}
             {mode === 'signup' && (
               <div>
                 <label htmlFor="name" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -152,29 +317,66 @@ export default function Auth() {
               </div>
             )}
 
-            <div>
-              <label htmlFor="email" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                Email address
-              </label>
-              <div className={inputWrap}>
-                <Icon name="mail" className="pointer-events-none absolute left-3.5 text-slate-400" />
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  className={inputCls}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="hello@coordina.ng"
-                />
+            {/* EMAIL ADDRESS */}
+            {mode !== 'verify' && (
+              <div>
+                <label htmlFor="email" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Email address
+                </label>
+                <div className={inputWrap}>
+                  <Icon name="mail" className="pointer-events-none absolute left-3.5 text-slate-400" />
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    className={inputCls}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="hello@coordina.ng"
+                    disabled={mode === 'reset'}
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
-            {mode !== 'forgot' && (
+            {/* 6-DIGIT CODE INPUT FOR VERIFY OR RESET */}
+            {(mode === 'verify' || mode === 'reset') && (
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label htmlFor="code" className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    6-Digit Security Code
+                  </label>
+                  {mode === 'verify' && (
+                    <button
+                      type="button"
+                      onClick={() => setVerificationCode('123456')}
+                      className="text-[10px] font-semibold text-brand-500 hover:underline"
+                    >
+                      Demo Code: 123456
+                    </button>
+                  )}
+                </div>
+                <div className={inputWrap}>
+                  <Icon name="pin" className="pointer-events-none absolute left-3.5 text-slate-400" />
+                  <input
+                    id="code"
+                    type="text"
+                    maxLength={8}
+                    className={`${inputCls} font-mono tracking-widest text-base font-bold`}
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    placeholder="123456"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* PASSWORD INPUT (SIGNIN, SIGNUP, RESET) */}
+            {mode !== 'forgot' && mode !== 'verify' && (
               <div>
                 <div className="mb-1.5 flex items-center justify-between">
                   <label htmlFor="pw" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                    Password
+                    {mode === 'reset' ? 'New Password' : 'Password'}
                   </label>
                   {mode === 'signin' && (
                     <button
@@ -183,6 +385,7 @@ export default function Auth() {
                       onClick={() => {
                         setMode('forgot');
                         setError(null);
+                        setInfo(null);
                       }}
                     >
                       Forgot password?
@@ -212,56 +415,124 @@ export default function Auth() {
               </div>
             )}
 
+            {/* CONFIRM PASSWORD (RESET MODE ONLY) */}
+            {mode === 'reset' && (
+              <div>
+                <label htmlFor="confirmPw" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Confirm New Password
+                </label>
+                <div className={inputWrap}>
+                  <Icon name="lock" className="pointer-events-none absolute left-3.5 text-slate-400" />
+                  <input
+                    id="confirmPw"
+                    type={show ? 'text' : 'password'}
+                    className={inputCls}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* ERROR & INFO NOTICES */}
             {error && (
               <p role="alert" className="rounded-xl border border-coral-400/30 bg-coral-50 p-3 text-xs font-medium text-coral-600 dark:bg-coral-500/10 dark:text-coral-400">
                 {error}
               </p>
             )}
             {info && (
-              <p role="status" className="rounded-xl border border-neon-400/30 bg-neon-50 p-3 text-xs font-medium text-neon-700 dark:bg-neon-500/10 dark:text-neon-400">
+              <p role="status" className="rounded-xl border border-brand-400/30 bg-brand-50 p-3 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
                 {info}
               </p>
             )}
 
-            <Button full size="lg" type="submit" disabled={!valid || busy} className="mt-2">
-              {busy ? 'Please wait…' : mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
+            <Button full size="lg" type="submit" disabled={!isFormValid() || busy} className="mt-2">
+              {busy ? (
+                'Processing…'
+              ) : mode === 'signin' ? (
+                'Sign In'
+              ) : mode === 'signup' ? (
+                'Create Account & Send Verification'
+              ) : mode === 'forgot' ? (
+                'Send Password Reset Code'
+              ) : mode === 'reset' ? (
+                'Update Password'
+              ) : (
+                'Verify Email & Activate Wallet'
+              )}
             </Button>
           </form>
 
-          <p className="muted mt-6 text-center text-sm">
-                  {mode === 'signin' ? (
-                    <>
-                      Don’t have an account?{' '}
-                      <button
-                        type="button"
-                        className="font-semibold text-brand-500 hover:underline"
-                        onClick={() => {
-                          setMode('signup');
-                          setError(null);
-                        }}
-                      >
-                        Sign Up
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      Already have an account?{' '}
-                      <button
-                        type="button"
-                        className="font-semibold text-brand-500 hover:underline"
-                        onClick={() => {
-                          setMode('signin');
-                          setError(null);
-                          setInfo(null);
-                        }}
-                      >
-                        Sign In
-                      </button>
-                    </>
-                  )}
-                </p>
-              </div>
+          {/* VERIFY MODE RESEND BUTTON */}
+          {mode === 'verify' && (
+            <div className="mt-4 flex items-center justify-between text-xs">
+              <span className="text-slate-500 dark:text-slate-400">Didn't receive the code?</span>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={resendCooldown > 0 || busy}
+                className="font-semibold text-brand-500 hover:underline disabled:opacity-50"
+              >
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend Email Code'}
+              </button>
             </div>
+          )}
+
+          {/* FOOTER SWITCHERS */}
+          <div className="mt-6 text-center text-sm text-slate-600 dark:text-slate-300">
+            {mode === 'signin' && (
+              <p>
+                Don’t have an account?{' '}
+                <button
+                  type="button"
+                  className="font-semibold text-brand-500 hover:underline"
+                  onClick={() => {
+                    setMode('signup');
+                    setError(null);
+                    setInfo(null);
+                  }}
+                >
+                  Sign Up
+                </button>
+              </p>
+            )}
+
+            {mode === 'signup' && (
+              <p>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  className="font-semibold text-brand-500 hover:underline"
+                  onClick={() => {
+                    setMode('signin');
+                    setError(null);
+                    setInfo(null);
+                  }}
+                >
+                  Sign In
+                </button>
+              </p>
+            )}
+
+            {(mode === 'forgot' || mode === 'reset' || mode === 'verify') && (
+              <p>
+                <button
+                  type="button"
+                  className="font-semibold text-brand-500 hover:underline flex items-center justify-center gap-1 mx-auto"
+                  onClick={() => {
+                    setMode('signin');
+                    setError(null);
+                    setInfo(null);
+                  }}
+                >
+                  <Icon name="arrow_back" className="text-sm" /> Back to Sign In
+                </button>
+              </p>
+            )}
+          </div>
         </div>
-        );
+      </div>
+    </div>
+  );
 }

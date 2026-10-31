@@ -65,6 +65,11 @@ export interface EventVerificationRecord {
     bvnNinVerified: boolean;
     phoneOtpVerified: boolean;
     directorName: string;
+    faceBiometricVerified?: boolean;
+    faceSnapshotUrl?: string;
+    biometricToken?: string;
+    biometricConfidence?: number;
+    biometricScannedAt?: string;
   };
   documents: VerificationDocument[];
   venueConfirmation: VenueConfirmationRequest;

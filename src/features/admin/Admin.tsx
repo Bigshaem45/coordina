@@ -711,6 +711,31 @@ export default function Admin() {
                   <p>CAC Number: <strong>{selectedRecord.organizerIdentity.cacNumber}</strong></p>
                   <p>Director: <strong>{selectedRecord.organizerIdentity.directorName}</strong></p>
                   <p>Identity Verification: <strong className="text-emerald-600 dark:text-emerald-400">NIN/BVN Validated</strong></p>
+                  {selectedRecord.organizerIdentity.faceBiometricVerified ? (
+                    <div className="mt-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5">
+                      <div className="flex items-center gap-2">
+                        {selectedRecord.organizerIdentity.faceSnapshotUrl && (
+                          <img
+                            src={selectedRecord.organizerIdentity.faceSnapshotUrl}
+                            alt="Director Face"
+                            className="h-10 w-10 rounded-full object-cover border-2 border-emerald-500 shrink-0"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <Icon name="verified" className="text-xs" /> Facial Liveness Authenticated
+                          </p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono">
+                            {selectedRecord.organizerIdentity.biometricToken || 'BIO-VERIFIED-NIN'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-[11px] font-semibold text-rose-500 flex items-center gap-1">
+                      <Icon name="warning" className="text-xs" /> Facial Liveness Scan Missing
+                    </p>
+                  )}
                 </div>
               </div>
 
