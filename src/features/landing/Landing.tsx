@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from '../../design-system/Icon';
 import { Logo } from '../../design-system/Logo';
 import { Badge, BottomSheet, Button, Card } from '../../design-system/ui';
@@ -23,12 +24,34 @@ export default function Landing() {
   const signOut = useStore((s) => s.signOut);
   const socialSignIn = useStore((s) => s.socialSignIn);
   const finishOnboarding = useStore((s) => s.finishOnboarding);
+  const theme = useStore((s) => s.theme);
+  const setTheme = useStore((s) => s.setTheme);
+  const city = useStore((s) => s.city);
+  const setCity = useStore((s) => s.setCity);
   const nav = useNavigate();
   const [apkModal, setApkModal] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [theme]);
+
+  // Prevent background scroll when mobile menu is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [mobileMenuOpen]);
 
   const enterDemo = () => {
     socialSignIn('Demo');
-    finishOnboarding({ city: 'Lagos', interests: ['Concerts', 'Food', 'Nightlife'], budget: 80000, vibe: 'Energetic' });
+    finishOnboarding({ city: city || 'Lagos', interests: ['Concerts', 'Food', 'Nightlife'], budget: 80000, vibe: 'Energetic' });
+    setMobileMenuOpen(false);
     nav('/home');
   };
 
@@ -50,13 +73,15 @@ export default function Landing() {
   const featured = events.slice(0, 6);
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)]">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] pb-20 text-[var(--text)] md:pb-0">
       {/* Minimalist Sticky Navbar */}
-      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-white/85 backdrop-blur-xl dark:bg-midnight-900/85">
+      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-white/90 backdrop-blur-xl dark:bg-midnight-900/90">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-6">
           <Link to="/" className="flex items-center gap-2">
             <Logo size={30} />
           </Link>
+
+          {/* Desktop Navigation Links */}
           <div className="hidden items-center gap-6 text-sm text-slate-600 dark:text-slate-300 md:flex">
             <a href="#featured" className="hover:text-slate-900 dark:hover:text-white">Featured</a>
             <a href="#features" className="hover:text-slate-900 dark:hover:text-white">Features</a>
@@ -66,14 +91,9 @@ export default function Landing() {
               <Icon name="android" className="text-base" /> Download APK
             </a>
           </div>
-          <nav className="flex items-center gap-2" aria-label="Account">
-            <button
-              type="button"
-              onClick={() => setApkModal(true)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100 sm:hidden"
-            >
-              <Icon name="android" className="text-brand-500 text-sm" /> APK
-            </button>
+
+          {/* Desktop Account & Action Buttons */}
+          <div className="hidden items-center gap-2.5 md:flex" aria-label="Account">
             {user ? (
               <>
                 <Link to={onboarded ? '/home' : '/onboarding'}>
@@ -93,9 +113,240 @@ export default function Landing() {
                 </Link>
               </>
             )}
-          </nav>
+          </div>
+
+          {/* Mobile Right Controls: Explore CTA + Hamburger Toggle */}
+          <div className="flex items-center gap-2 md:hidden">
+            <Link to="/home">
+              <Button size="sm" className="h-9 px-3.5 text-xs">
+                Explore
+              </Button>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xs transition hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={mobileMenuOpen}
+            >
+              <Icon name={mobileMenuOpen ? 'close' : 'menu'} className="text-[20px]" />
+            </button>
+          </div>
         </div>
       </header>
+
+      {/* Mobile Slide-Over Navigation Drawer */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setMobileMenuOpen(false)}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs"
+            />
+
+            {/* Slide-out Menu Panel */}
+            <motion.aside
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+              className="surface absolute right-0 top-0 flex h-full w-[86vw] max-w-sm flex-col overflow-y-auto border-l border-[var(--border)] p-5 shadow-2xl"
+              aria-label="Mobile Navigation"
+            >
+              {/* Drawer Top Header */}
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
+                <Logo size={26} />
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                  aria-label="Close menu"
+                >
+                  <Icon name="close" className="text-lg" />
+                </button>
+              </div>
+
+              {/* City Switcher in Drawer */}
+              <div className="mt-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-midnight-800">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                  <Icon name="location_on" className="text-sm text-brand-500" />
+                  City: <strong className="text-slate-900 dark:text-white">{city}</strong>
+                </span>
+                <div className="flex items-center gap-1">
+                  {(['Lagos', 'Abuja'] as const).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCity(c)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                        city === c
+                          ? 'bg-brand-500 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Navigation Links List */}
+              <nav className="mt-5 space-y-1" aria-label="Mobile primary navigation">
+                {[
+                  { to: '/home', icon: 'explore', label: 'Explore Events', desc: 'Concerts, nightlife, food & art' },
+                  { to: '/discover', icon: 'local_bar', label: 'Verified Spaces', desc: 'Rooftops, lounges & galleries' },
+                  { to: '/map', icon: 'map', label: 'Interactive Map', desc: `Live event pins across ${city}` },
+                  { to: '/team', icon: 'groups', label: 'Leadership Team', desc: 'Meet CEO, CTO Samuel Onuegbu & execs' },
+                  { to: '/organiser', icon: 'dashboard', label: 'Organiser Studio', desc: 'Host events & verify credentials' },
+                  { to: '/venue-portal', icon: 'verified', label: 'Venue Verification', desc: 'Venue manager confirmation portal' },
+                ].map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3.5 rounded-2xl p-3 transition hover:bg-slate-100 dark:hover:bg-midnight-800"
+                  >
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-300">
+                      <Icon name={item.icon} className="text-xl" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.label}</p>
+                      <p className="muted truncate text-xs">{item.desc}</p>
+                    </div>
+                    <Icon name="chevron_right" className="text-sm text-slate-400" />
+                  </Link>
+                ))}
+              </nav>
+
+              {/* Quick Android Download Card */}
+              <div className="mt-5 rounded-2xl border border-neon-500/30 bg-neon-50/50 p-4 dark:bg-neon-500/10">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 text-xs font-bold text-neon-700 dark:text-neon-400">
+                    <Icon name="android" className="text-base" /> Android App v1.0.0
+                  </span>
+                  <span className="rounded-full bg-neon-500/20 px-2 py-0.5 text-[10px] font-bold text-neon-700 dark:text-neon-300">
+                    18.4 MB
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Fast native experience with offline ticket access.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      downloadApk();
+                    }}
+                    className="flex-1 rounded-xl bg-neon-500 py-2 text-center text-xs font-bold text-slate-950 transition hover:bg-neon-400"
+                  >
+                    Download APK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setApkModal(true);
+                    }}
+                    className="rounded-xl border border-neon-500/40 bg-white/70 px-3 py-2 text-xs font-medium text-slate-800 transition hover:bg-white dark:bg-midnight-800 dark:text-slate-200"
+                  >
+                    Guide
+                  </button>
+                </div>
+              </div>
+
+              {/* Account / Demo Actions */}
+              <div className="mt-auto pt-6">
+                {user ? (
+                  <div className="space-y-2 border-t border-[var(--border)] pt-4">
+                    <div className="flex items-center gap-2.5 px-1 text-xs text-slate-500">
+                      <Icon name="account_circle" className="text-base text-brand-500" />
+                      <span className="truncate">{user.name || 'Logged in user'}</span>
+                    </div>
+                    <Link to="/home" onClick={() => setMobileMenuOpen(false)} className="block">
+                      <Button full size="md">
+                        Open Feed
+                      </Button>
+                    </Link>
+                    <Button
+                      full
+                      variant="outline"
+                      size="md"
+                      onClick={() => {
+                        signOut();
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      Sign Out
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 border-t border-[var(--border)] pt-4">
+                    <Button full size="md" variant="secondary" onClick={enterDemo}>
+                      <Icon name="bolt" className="text-base" /> Try Instant Demo
+                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Link to="/auth" onClick={() => setMobileMenuOpen(false)}>
+                        <Button full size="md" variant="outline">
+                          Log in
+                        </Button>
+                      </Link>
+                      <Link to="/auth?mode=signup" onClick={() => setMobileMenuOpen(false)}>
+                        <Button full size="md">
+                          Sign up
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dark / Light Mode Switcher */}
+                <div className="mt-4 flex items-center justify-between border-t border-[var(--border)] pt-3 text-xs text-slate-500">
+                  <span>Theme: {theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-slate-700 shadow-2xs transition hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
+                  >
+                    <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} className="text-sm text-brand-500" />
+                    <span>Switch</span>
+                  </button>
+                </div>
+              </div>
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Mobile Bottom Navigation Bar (Docked on Mobile) */}
+      <aside
+        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between border-t border-[var(--border)] bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
+        aria-label="Quick mobile actions"
+      >
+        <div className="flex min-w-0 flex-1 flex-col">
+          <p className="text-[11px] font-semibold text-brand-600 dark:text-brand-400">COORDINA Mobile</p>
+          <p className="truncate text-xs text-slate-600 dark:text-slate-300">Live events &amp; verified venues</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setApkModal(true)}
+            className="inline-flex h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
+          >
+            <Icon name="android" className="text-sm text-neon-500" /> APK
+          </button>
+          <Link to="/home">
+            <Button size="md" className="h-10 px-4 text-xs font-bold">
+              Explore Now
+            </Button>
+          </Link>
+        </div>
+      </aside>
 
       {/* Editorial Hero Banner */}
       <section className="mx-auto max-w-6xl px-4 pt-6 md:px-6 md:pt-8">
