@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
 import { Badge, Button, Card } from '../../design-system/ui';
@@ -86,10 +87,27 @@ const VALUES = [
 ];
 
 export default function Team() {
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setScrolled(window.scrollY > 20);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)]">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-white/85 backdrop-blur-xl dark:bg-midnight-900/85">
+      <header
+        className={`sticky top-0 z-50 transition-all duration-300 ${
+          scrolled
+            ? 'border-b border-slate-200/70 bg-white/70 shadow-xs backdrop-blur-xl dark:border-slate-800/70 dark:bg-midnight-950/75'
+            : 'border-b border-slate-200/20 bg-white/40 backdrop-blur-md dark:border-slate-800/20 dark:bg-midnight-950/40'
+        }`}
+      >
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-6">
           <Link to="/" className="flex items-center gap-2">
             <Logo size={30} />

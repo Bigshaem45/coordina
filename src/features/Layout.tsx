@@ -26,12 +26,22 @@ const MOBILE_NAV = [
 
 export function Layout() {
   const [msg, setMsg] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
   const theme = useStore((s) => s.theme);
   const swapNotice = useStore((s) => s.swapNotice);
   const count = useStore((s) => s.cart.length);
   const loc = useLocation();
   const setCartOpen = useStore((s) => s.setCartOpen);
   const done = useCallback(() => setMsg(null), []);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setScrolled(window.scrollY > 15);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Detail & checkout screens have their own docked bottom CTA bar—hide mobile tab bar to prevent overlap
   const hasOwnBottomBar =
@@ -63,7 +73,13 @@ export function Layout() {
       }`}
     >
       {/* Desktop Top Header */}
-      <header className="sticky top-0 z-40 hidden border-b border-[var(--border)] bg-white/85 backdrop-blur-xl dark:bg-midnight-900/85 md:block">
+      <header
+        className={`sticky top-0 z-40 hidden border-b transition-all duration-300 md:block ${
+          scrolled
+            ? 'border-slate-200/70 bg-white/75 shadow-xs backdrop-blur-xl dark:border-slate-800/70 dark:bg-midnight-950/75'
+            : 'border-slate-200/30 bg-white/50 backdrop-blur-md dark:border-slate-800/30 dark:bg-midnight-950/50'
+        }`}
+      >
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-6">
           <Link to="/home" aria-label="COORDINA home" className="shrink-0">
             <Logo size={30} />
@@ -121,7 +137,7 @@ export function Layout() {
       {/* Mobile Tab Bar (hidden on detail/checkout screens that mount their own sticky CTA bar) */}
       {!hasOwnBottomBar && (
         <nav
-          className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(4rem+env(safe-area-inset-bottom,0px))] w-full items-center border-t border-[var(--border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom,0px)] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(4rem+env(safe-area-inset-bottom,0px))] w-full items-center border-t border-slate-200/70 bg-white/75 px-2 pb-[env(safe-area-inset-bottom,0px)] shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-slate-800/70 dark:bg-midnight-950/80 md:hidden"
           aria-label="Primary"
         >
           {MOBILE_NAV.map((n) => (
