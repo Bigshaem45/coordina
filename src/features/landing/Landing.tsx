@@ -55,14 +55,11 @@ export default function Landing() {
     nav('/home');
   };
 
+  const BETADROP_URL = 'https://betadrop.app/i/uSrcmd';
+
   const downloadApk = () => {
-    const link = document.createElement('a');
-    link.href = '/downloads/coordina-v1.0.0.apk';
-    link.download = 'coordina-v1.0.0.apk';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast('Downloading COORDINA Android APK (v1.0.0)...');
+    window.open(BETADROP_URL, '_blank', 'noopener,noreferrer');
+    toast('Opening Betadrop Android release download...');
   };
 
   const copyHash = () => {
@@ -550,16 +547,26 @@ export default function Landing() {
 
             {/* QR Code & Phone Card */}
             <div className="md:col-span-5">
-              <div className="rounded-2xl border border-slate-700/60 bg-slate-900/80 p-6 text-center shadow-lg">
-                <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-2xl bg-white p-3 shadow-card">
-                  {/* High quality SVG QR code mockup for direct mobile download */}
-                  <svg viewBox="0 0 100 100" className="h-full w-full fill-slate-900">
-                    <path d="M0 0h30v30H0zM10 10h10v10H10zM70 0h30v30H70zM80 10h10v10H80zM0 70h30v30H0zM10 80h10v10H10zM40 10h10v10H40zM50 20h10v10H50zM40 30h10v10H40zM10 40h10v10H10zM20 50h10v10H20zM30 40h10v10H30zM50 40h20v10H50zM70 40h10v10H70zM80 50h10v20H80zM40 60h10v20H40zM60 60h10v10H60zM70 70h20v10H70zM50 80h10v20H50zM80 80h10v10H80zM90 90h10v10H90zM60 90h10v10H60z" />
-                  </svg>
+              <a
+                href={BETADROP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group block rounded-2xl border border-slate-700/60 bg-slate-900/80 p-6 text-center shadow-lg transition hover:border-brand-500/50 hover:bg-slate-900"
+              >
+                <div className="mx-auto flex h-36 w-36 items-center justify-center rounded-2xl bg-white p-2.5 shadow-card transition group-hover:scale-105">
+                  <img
+                    src="/betadrop-qr.png"
+                    alt="Scan with phone camera to download COORDINA APK on Betadrop"
+                    className="h-full w-full object-contain"
+                  />
                 </div>
-                <p className="mt-3 text-xs font-semibold text-white">Scan with your phone camera</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">Direct download to any Android device</p>
-              </div>
+                <p className="mt-3 text-xs font-semibold text-white transition group-hover:text-neon-400">
+                  Scan with your phone camera
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  Direct install via Betadrop · betadrop.app/i/uSrcmd
+                </p>
+              </a>
             </div>
           </div>
         </div>
@@ -647,7 +654,7 @@ export default function Landing() {
 
           <div className="pt-2">
             <Button full size="lg" onClick={downloadApk} className="bg-neon-500 text-slate-950 hover:bg-neon-400 font-bold">
-              <Icon name="download" /> Download coordina-v1.0.0.apk
+              <Icon name="open_in_new" /> Open Betadrop Download Page
             </Button>
           </div>
         </div>
