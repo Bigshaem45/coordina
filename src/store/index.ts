@@ -15,7 +15,8 @@ export interface Booking { id: string; spaceId: string; date: string; guests: nu
 export interface AdminItem { id: string; kind: 'Venue' | 'Event'; name: string; by: string; status: 'pending' | 'approved' | 'rejected' }
 export interface FraudFlag { id: string; reason: string; target: string; level: 'high' | 'med' | 'low'; resolved: boolean }
 
-export interface User { name: string; email: string; emailVerified?: boolean }
+export type UserRole = 'attendee' | 'organiser';
+export interface User { name: string; email: string; role: UserRole; emailVerified?: boolean }
 interface Account extends User {
   password: string;
   emailVerificationCode?: string;
@@ -24,8 +25,9 @@ interface Account extends User {
 
 interface State {
   user: User | null; accounts: Account[];
-  signUp: (name: string, email: string, password: string) => string | null;
+  signUp: (name: string, email: string, password: string, role?: UserRole) => string | null;
   signIn: (email: string, password: string) => string | null;
+  upgradeToOrganiser: () => void;
   verifyEmail: (email: string, code: string) => boolean;
   requestEmailVerification: (email: string) => string | null;
   requestPasswordReset: (email: string) => { success: boolean; code?: string; message?: string };
@@ -72,12 +74,12 @@ export const useStore = create<State>()(
   persist(
     (set, get) => ({
       user: null, accounts: [],
-      signUp: (name, email, password) => {
+      signUp: (name, email, password, role = 'attendee') => {
         const e = email.trim().toLowerCase();
         if (get().accounts.some((a) => a.email === e)) return 'An account with this email already exists. Sign in instead.';
         const vCode = Math.floor(100000 + Math.random() * 900000).toString();
-        const newAcc: Account = { name, email: e, password, emailVerified: false, emailVerificationCode: vCode };
-        set((s) => ({ accounts: [...s.accounts, newAcc], user: { name, email: e, emailVerified: false }, onboarded: false }));
+        const newAcc: Account = { name, email: e, password, role, emailVerified: false, emailVerificationCode: vCode };
+        set((s) => ({ accounts: [...s.accounts, newAcc], user: { name, email: e, role, emailVerified: false }, onboarded: false }));
         return null;
       },
       signIn: (email, password) => {
@@ -85,8 +87,16 @@ export const useStore = create<State>()(
         const a = get().accounts.find((x) => x.email === e);
         if (!a) return 'No account found for this email. Create one first.';
         if (a.password !== password) return 'Incorrect password.';
-        set({ user: { name: a.name, email: a.email, emailVerified: !!a.emailVerified } });
+        set({ user: { name: a.name, email: a.email, role: a.role || 'attendee', emailVerified: !!a.emailVerified } });
         return null;
+      },
+      upgradeToOrganiser: () => {
+        const u = get().user;
+        if (!u) return;
+        set((s) => ({
+          user: { ...u, role: 'organiser' },
+          accounts: s.accounts.map((a) => (a.email === u.email ? { ...a, role: 'organiser' } : a)),
+        }));
       },
       verifyEmail: (email, code) => {
         const e = email.trim().toLowerCase();
@@ -138,7 +148,7 @@ export const useStore = create<State>()(
       },
       socialSignIn: (provider) => {
         const email = `attendee@${provider.toLowerCase()}.coordina.app`;
-        set({ user: { name: `${provider} Guest`, email } });
+        set({ user: { name: `${provider} Guest`, email, role: 'attendee' } });
       },
       signOut: () => set({ user: null }),
       onboarded: false, city: 'Abuja', interests: [], budget: 100000, vibe: 'Energetic',

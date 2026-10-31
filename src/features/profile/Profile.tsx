@@ -178,15 +178,6 @@ export default function Profile() {
         >
           <Icon name="logout" /> Sign Out
         </Button>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            localStorage.removeItem('cho-store');
-            location.href = '/';
-          }}
-        >
-          Reset Demo Data
-        </Button>
       </div>
     </div>
   );

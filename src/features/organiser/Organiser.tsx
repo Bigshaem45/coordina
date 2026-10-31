@@ -36,6 +36,63 @@ const inputCls =
 
 export default function Organiser() {
   const [tab, setTab] = useState<Tab>('Dashboard');
+  const user = useStore((s) => s.user);
+  const upgradeToOrganiser = useStore((s) => s.upgradeToOrganiser);
+
+  // Access Restriction Gate: Not signed in
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-16 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
+          <Icon name="lock" className="text-3xl" />
+        </div>
+        <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">Organiser Studio Access</h1>
+        <p className="muted mt-2 text-sm leading-relaxed">
+          The Organiser Studio is reserved for event hosts, planners, and space managers. Please sign in or register as an organizer to access the dashboard.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Link to="/auth?role=organiser">
+            <Button size="lg">Sign In as Organizer</Button>
+          </Link>
+          <Link to="/auth?mode=signup&role=organiser">
+            <Button size="lg" variant="outline">Register as Organizer</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Access Restriction Gate: Signed in as Attendee
+  if (user.role === 'attendee') {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-16 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300">
+          <Icon name="admin_panel_settings" className="text-3xl" />
+        </div>
+        <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+          <Icon name="person" className="text-xs" /> Attendee Account ({user.email})
+        </div>
+        <h1 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">Organizer Privileges Required</h1>
+        <p className="muted mt-2 text-sm leading-relaxed">
+          Your account is currently set to <strong>Attendee</strong>. To publish events, verify spaces, scan tickets at the gate, and receive Paystack payouts, please upgrade your account to an Event Organizer.
+        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Button
+            size="lg"
+            onClick={() => {
+              upgradeToOrganiser();
+              toast('Account upgraded to Event Organizer! Welcome to the Studio.');
+            }}
+          >
+            <Icon name="upgrade" /> Upgrade to Event Organizer
+          </Button>
+          <Link to="/home">
+            <Button size="lg" variant="outline">Back to Discover</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-6 md:px-0">
@@ -619,7 +676,7 @@ function Payouts() {
       bankCode,
     });
 
-    const recipientCode = recipient.recipientCode || 'RCP_demo_pstk';
+    const recipientCode = recipient.recipientCode || 'RCP_pstk_transfer';
     const trfRes = await initiateTransfer({
       amountNaira: amt,
       recipientCode,

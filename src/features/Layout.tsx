@@ -28,6 +28,7 @@ export function Layout() {
   const [msg, setMsg] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const theme = useStore((s) => s.theme);
+  const user = useStore((s) => s.user);
   const city = useStore((s) => s.city);
   const swapNotice = useStore((s) => s.swapNotice);
   const count = useStore((s) => s.cart.length);
@@ -117,10 +118,14 @@ export function Layout() {
           <div className="flex items-center gap-2">
             <Link
               to="/organiser"
-              className="inline-flex h-8 md:h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 md:px-3.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:bg-slate-800"
+              className={`inline-flex h-8 md:h-9 items-center gap-1.5 rounded-full border px-2.5 md:px-3.5 text-xs font-medium transition ${
+                user?.role === 'organiser'
+                  ? 'border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950/60 dark:text-brand-300'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:bg-slate-800'
+              }`}
             >
               <Icon name="dashboard" className="text-[15px] text-brand-500" />
-              <span className="hidden sm:inline">Studio</span>
+              <span className="hidden sm:inline">{user?.role === 'organiser' ? 'Studio' : 'Host Event'}</span>
             </Link>
             <button
               type="button"

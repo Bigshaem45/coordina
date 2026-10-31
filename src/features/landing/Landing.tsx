@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from '../../design-system/Icon';
 import { Logo } from '../../design-system/Logo';
@@ -22,13 +22,10 @@ export default function Landing() {
   const user = useStore((s) => s.user);
   const onboarded = useStore((s) => s.onboarded);
   const signOut = useStore((s) => s.signOut);
-  const socialSignIn = useStore((s) => s.socialSignIn);
-  const finishOnboarding = useStore((s) => s.finishOnboarding);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
   const city = useStore((s) => s.city);
   const setCity = useStore((s) => s.setCity);
-  const nav = useNavigate();
   const [apkModal, setApkModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -57,13 +54,6 @@ export default function Landing() {
       document.body.style.overflow = '';
     };
   }, [mobileMenuOpen]);
-
-  const enterDemo = () => {
-    socialSignIn('Demo');
-    finishOnboarding({ city: city || 'Lagos', interests: ['Concerts', 'Food', 'Nightlife'], budget: 80000, vibe: 'Energetic' });
-    setMobileMenuOpen(false);
-    nav('/home');
-  };
 
   const BETADROP_URL = 'https://betadrop.app/i/uSrcmd';
 
@@ -302,9 +292,6 @@ export default function Landing() {
                   </div>
                 ) : (
                   <div className="space-y-2 border-t border-[var(--border)] pt-4">
-                    <Button full size="md" variant="secondary" onClick={enterDemo}>
-                      <Icon name="bolt" className="text-base" /> Try Instant Demo
-                    </Button>
                     <div className="grid grid-cols-2 gap-2">
                       <Link to="/auth" onClick={() => setMobileMenuOpen(false)}>
                         <Button full size="md" variant="outline">
@@ -390,9 +377,6 @@ export default function Landing() {
                 </Link>
                 <Button size="lg" variant="white" onClick={() => setApkModal(true)}>
                   <Icon name="android" className="text-base text-brand-600" /> Download APK
-                </Button>
-                <Button size="lg" variant="ghost" className="text-white hover:bg-white/10" onClick={enterDemo}>
-                  Launch Demo
                 </Button>
               </div>
             </div>

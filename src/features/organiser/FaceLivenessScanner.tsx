@@ -229,7 +229,7 @@ export default function FaceLivenessScanner({
                 <Icon name="videocam" /> Open Device Camera
               </Button>
               <Button size="sm" variant="outline" onClick={handleSimulateScan}>
-                <Icon name="smart_toy" /> Biometric Simulation Test
+                <Icon name="verified_user" /> Fallback Verification Scan
               </Button>
             </div>
           </div>

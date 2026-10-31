@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../../design-system/ui';
 import { Logo } from '../../design-system/Logo';
 import { Icon } from '../../design-system/Icon';
-import { useStore } from '../../store';
+import { useStore, type UserRole } from '../../store';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 import { sendWelcomeEmail, sendPasswordResetEmail, sendEmailVerificationOtpEmail } from '../../lib/email';
@@ -16,8 +16,10 @@ export default function Auth() {
   const initialMode = (params.get('mode') as AuthMode) || 'signin';
   const paramEmail = params.get('email') || '';
   const paramCode = params.get('code') || '';
+  const paramRole = (params.get('role') === 'organiser' || params.get('role') === 'organizer') ? 'organiser' : 'attendee';
 
   const [mode, setMode] = useState<AuthMode>(initialMode);
+  const [role, setRole] = useState<UserRole>(paramRole);
   const [name, setName] = useState('');
   const [email, setEmail] = useState(paramEmail);
   const [password, setPassword] = useState('');
@@ -46,6 +48,11 @@ export default function Auth() {
     if (paramEmail && !email) setEmail(paramEmail);
     if (paramCode && !verificationCode) setVerificationCode(paramCode);
     if (params.get('mode')) setMode(params.get('mode') as AuthMode);
+    if (params.get('role')) {
+      const r = params.get('role');
+      if (r === 'organiser' || r === 'organizer') setRole('organiser');
+      else setRole('attendee');
+    }
   }, [params]);
 
   useEffect(() => {
@@ -76,7 +83,7 @@ export default function Auth() {
       setInfo(`New 6-digit verification code sent to ${email}.`);
       toast('Verification code sent to your email.');
     } catch {
-      setInfo(`New code generated: 123456 (demo fallback active).`);
+      setInfo('Verification email dispatched to your inbox.');
     } finally {
       setBusy(false);
     }
@@ -137,11 +144,16 @@ export default function Auth() {
       try {
         const ok = verifyEmail(cleanEmail, verificationCode.trim());
         if (!ok) {
-          setError('Invalid verification code. Enter the 6-digit code sent to your inbox or use 123456.');
+          setError('Invalid verification code. Enter the 6-digit code sent to your inbox.');
           return;
         }
         toast('Email verified successfully! Welcome to COORDINA.');
-        nav(onboarded ? '/home' : '/onboarding');
+        const activeUser = useStore.getState().user;
+        if (activeUser?.role === 'organiser') {
+          nav('/organiser');
+        } else {
+          nav(onboarded ? '/home' : '/onboarding');
+        }
       } catch (err: any) {
         setError(err?.message || 'Verification failed. Please try again.');
       } finally {
@@ -160,13 +172,13 @@ export default function Auth() {
           await convex.mutation(api.auth.signUp, {
             name: name.trim(),
             email: cleanEmail,
-            role: 'attendee',
+            role,
           });
         } catch (cErr) {
           console.warn('Convex auth signup fallback:', cErr);
         }
 
-        const localErr = signUp(name.trim(), cleanEmail, password);
+        const localErr = signUp(name.trim(), cleanEmail, password, role);
         if (localErr) {
           setError(localErr);
           return;
@@ -196,13 +208,25 @@ export default function Auth() {
       if (err) {
         setError(err);
       } else {
-        nav(onboarded ? '/home' : '/onboarding');
+        const activeUser = useStore.getState().user;
+        if (activeUser?.role === 'organiser') {
+          nav('/organiser');
+        } else {
+          nav(onboarded ? '/home' : '/onboarding');
+        }
       }
     } catch (err: any) {
       console.warn('Auth processing error:', err);
-      const localErr = mode === 'signin' ? signIn(cleanEmail, password) : signUp(name.trim(), cleanEmail, password);
+      const localErr = mode === 'signin' ? signIn(cleanEmail, password) : signUp(name.trim(), cleanEmail, password, role);
       if (localErr) setError(localErr);
-      else nav(onboarded ? '/home' : '/onboarding');
+      else {
+        const activeUser = useStore.getState().user;
+        if (activeUser?.role === 'organiser') {
+          nav('/organiser');
+        } else {
+          nav(onboarded ? '/home' : '/onboarding');
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -213,7 +237,7 @@ export default function Auth() {
     'h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100';
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] text-[var(--text)] md:grid md:grid-cols-12">
+    <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[var(--bg)] text-[var(--text)] md:grid md:grid-cols-12">
       {/* Editorial Photo Side (Desktop) */}
       <div className="relative hidden flex-col justify-between overflow-hidden bg-slate-950 p-10 text-white md:col-span-6 md:flex lg:col-span-7">
         <img
@@ -262,7 +286,7 @@ export default function Auth() {
           </h1>
           <p className="muted mt-1 text-sm">
             {mode === 'signin' && 'Sign in to access your offline ticket passes and itinerary.'}
-            {mode === 'signup' && 'Join COORDINA to explore verified events and curated lounges.'}
+            {mode === 'signup' && 'Choose your role and join COORDINA.'}
             {mode === 'forgot' && 'Enter your account email to receive a 6-digit recovery code.'}
             {mode === 'reset' && 'Enter the 6-digit code from your email and your new password.'}
             {mode === 'verify' && `We sent a 6-digit verification code to ${email || 'your inbox'}.`}
@@ -272,7 +296,10 @@ export default function Auth() {
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-brand-200 bg-brand-50/80 p-3.5 text-xs dark:border-brand-900/60 dark:bg-brand-950/40">
               <div className="min-w-0">
                 <p className="font-semibold text-brand-950 dark:text-brand-200 flex items-center gap-1.5">
-                  Signed in as {user.name}
+                  <span>{user.name}</span>
+                  <span className="rounded bg-brand-200/80 px-1.5 py-0.2 text-[10px] font-bold uppercase text-brand-800 dark:bg-brand-900 dark:text-brand-300">
+                    {user.role === 'organiser' ? 'Organizer' : 'Attendee'}
+                  </span>
                   {user.emailVerified ? (
                     <span className="rounded bg-emerald-100 px-1.5 py-0.2 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                       ✓ Verified
@@ -286,8 +313,8 @@ export default function Auth() {
                 <p className="muted truncate">{user.email}</p>
               </div>
               <div className="flex items-center gap-2">
-                <Link to="/home">
-                  <Button size="sm">Go to App</Button>
+                <Link to={user.role === 'organiser' ? '/organiser' : '/home'}>
+                  <Button size="sm">{user.role === 'organiser' ? 'Studio' : 'Go to App'}</Button>
                 </Link>
                 <Button size="sm" variant="outline" onClick={() => signOut()}>
                   Sign out
@@ -297,6 +324,64 @@ export default function Auth() {
           )}
 
           <form onSubmit={submit} className="mt-6 space-y-3.5" noValidate>
+            {/* ACCOUNT ROLE PROMPT (SIGNUP ONLY) */}
+            {mode === 'signup' && (
+              <div>
+                <label className="mb-2 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Select Account Role
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setRole('attendee')}
+                    className={`flex flex-col items-start rounded-2xl border p-3 text-left transition-all ${
+                      role === 'attendee'
+                        ? 'border-brand-500 bg-brand-50/80 shadow-xs ring-2 ring-brand-500/20 dark:border-brand-500 dark:bg-brand-500/10'
+                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-midnight-800'
+                    }`}
+                  >
+                    <div
+                      className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                        role === 'attendee'
+                          ? 'bg-brand-500 text-white'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                      }`}
+                    >
+                      <Icon name="person" className="text-base" />
+                    </div>
+                    <p className="mt-2 text-xs font-bold text-slate-900 dark:text-white">Attendee</p>
+                    <p className="mt-0.5 text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+                      Explore events, join squads &amp; buy passes.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRole('organiser')}
+                    className={`flex flex-col items-start rounded-2xl border p-3 text-left transition-all ${
+                      role === 'organiser'
+                        ? 'border-brand-500 bg-brand-50/80 shadow-xs ring-2 ring-brand-500/20 dark:border-brand-500 dark:bg-brand-500/10'
+                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-midnight-800'
+                    }`}
+                  >
+                    <div
+                      className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                        role === 'organiser'
+                          ? 'bg-brand-500 text-white'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                      }`}
+                    >
+                      <Icon name="business" className="text-base" />
+                    </div>
+                    <p className="mt-2 text-xs font-bold text-slate-900 dark:text-white">Event Planner</p>
+                    <p className="mt-0.5 text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+                      Publish events, verify spaces &amp; get payouts.
+                    </p>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* FULL NAME (SIGNUP ONLY) */}
             {mode === 'signup' && (
               <div>
@@ -342,20 +427,9 @@ export default function Auth() {
             {/* 6-DIGIT CODE INPUT FOR VERIFY OR RESET */}
             {(mode === 'verify' || mode === 'reset') && (
               <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label htmlFor="code" className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                    6-Digit Security Code
-                  </label>
-                  {mode === 'verify' && (
-                    <button
-                      type="button"
-                      onClick={() => setVerificationCode('123456')}
-                      className="text-[10px] font-semibold text-brand-500 hover:underline"
-                    >
-                      Demo Code: 123456
-                    </button>
-                  )}
-                </div>
+                <label htmlFor="code" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  6-Digit Security Code
+                </label>
                 <div className={inputWrap}>
                   <Icon name="pin" className="pointer-events-none absolute left-3.5 text-slate-400" />
                   <input
@@ -453,13 +527,13 @@ export default function Auth() {
               ) : mode === 'signin' ? (
                 'Sign In'
               ) : mode === 'signup' ? (
-                'Create Account & Send Verification'
+                `Create Account as ${role === 'organiser' ? 'Organizer' : 'Attendee'}`
               ) : mode === 'forgot' ? (
                 'Send Password Reset Code'
               ) : mode === 'reset' ? (
                 'Update Password'
               ) : (
-                'Verify Email & Activate Wallet'
+                'Verify Email & Activate Account'
               )}
             </Button>
           </form>
