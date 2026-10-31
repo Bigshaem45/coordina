@@ -190,3 +190,160 @@ export const getEventRatings = query({
     };
   },
 });
+
+// -------------------------------------------------------------
+// ORGANIZER BLACKLIST & IDENTITY FRAUD REGISTRY
+// (Email, Phone Number, and NIN Enforcement)
+// -------------------------------------------------------------
+
+export const flagAndBlacklistOrganizer = mutation({
+  args: {
+    organizerName: v.string(),
+    email: v.string(),
+    phone: v.string(),
+    nin: v.string(),
+    cacNumber: v.optional(v.string()),
+    reason: v.string(),
+    eventId: v.optional(v.string()),
+    eventTitle: v.optional(v.string()),
+    adminName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const cleanEmail = args.email.trim().toLowerCase();
+    const cleanPhone = args.phone.trim();
+    const cleanNin = args.nin.trim().toUpperCase();
+
+    // 1. Insert into blacklisted identities registry
+    const blacklistId = await ctx.db.insert('blacklisted_identities', {
+      organizerName: args.organizerName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      nin: cleanNin,
+      cacNumber: args.cacNumber?.trim(),
+      reason: args.reason,
+      eventId: args.eventId,
+      eventTitle: args.eventTitle,
+      flaggedBy: args.adminName,
+      status: 'active_blacklist',
+      createdAt: Date.now(),
+    });
+
+    // 2. Suspend related event if provided
+    if (args.eventId) {
+      try {
+        await ctx.db.patch(args.eventId as any, {
+          verificationStatus: 'Event Suspended',
+          status: 'cancelled',
+        });
+      } catch {
+        // Event might be string ID
+      }
+    }
+
+    // 3. Mark any matching organizer account as restricted
+    const orgs = await ctx.db.query('organizers').collect();
+    for (const org of orgs) {
+      if (
+        org.contactEmail.toLowerCase() === cleanEmail ||
+        org.contactPhone === cleanPhone ||
+        (args.cacNumber && org.cacNumber === args.cacNumber)
+      ) {
+        await ctx.db.patch(org._id, {
+          status: 'restricted',
+          riskScore: 100,
+        });
+      }
+    }
+
+    // 4. Log immutable compliance record
+    await ctx.db.insert('audit_logs', {
+      actorName: args.adminName,
+      actorRole: 'compliance_officer',
+      action: 'ORGANIZER_BLACKLISTED',
+      targetEntity: 'blacklisted_identities',
+      targetId: blacklistId,
+      details: `Organizer ${args.organizerName} blacklisted for "${args.reason}". Flagged Email: ${cleanEmail}, Phone: ${cleanPhone}, NIN: ${cleanNin}`,
+      timestamp: Date.now(),
+    });
+
+    return { success: true, blacklistId };
+  },
+});
+
+export const getBlacklistedIdentities = query({
+  args: {},
+  handler: async (ctx) => {
+    const list = await ctx.db.query('blacklisted_identities').collect();
+    return list.sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
+
+export const pardonBlacklistedIdentity = mutation({
+  args: {
+    blacklistId: v.id('blacklisted_identities'),
+    adminName: v.string(),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.get(args.blacklistId);
+    if (!record) throw new Error('Blacklist record not found');
+
+    await ctx.db.patch(args.blacklistId, {
+      status: 'pardoned',
+    });
+
+    await ctx.db.insert('audit_logs', {
+      actorName: args.adminName,
+      actorRole: 'compliance_officer',
+      action: 'ORGANIZER_PARDONED',
+      targetEntity: 'blacklisted_identities',
+      targetId: args.blacklistId,
+      details: `Pardoned organizer ${record.organizerName} from blacklist. Reason: ${args.reason}`,
+      timestamp: Date.now(),
+    });
+
+    return true;
+  },
+});
+
+export const checkIdentityIsBlacklisted = query({
+  args: {
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    nin: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const list = await ctx.db
+      .query('blacklisted_identities')
+      .withIndex('by_status', (q) => q.eq('status', 'active_blacklist'))
+      .collect();
+
+    const cleanEmail = args.email?.trim().toLowerCase();
+    const cleanPhone = args.phone?.trim();
+    const cleanNin = args.nin?.trim().toUpperCase();
+
+    const matched = list.find(
+      (b) =>
+        (cleanEmail && b.email.toLowerCase() === cleanEmail) ||
+        (cleanPhone && b.phone === cleanPhone) ||
+        (cleanNin && b.nin.toUpperCase() === cleanNin)
+    );
+
+    if (matched) {
+      return {
+        blacklisted: true,
+        reason: matched.reason,
+        matchedField:
+          cleanNin && matched.nin.toUpperCase() === cleanNin
+            ? 'NIN'
+            : cleanEmail && matched.email.toLowerCase() === cleanEmail
+            ? 'Email'
+            : 'Phone Number',
+      };
+    }
+
+    return { blacklisted: false };
+  },
+});
+
+

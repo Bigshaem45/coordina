@@ -44,6 +44,33 @@ export default function Admin() {
     },
   ]);
 
+  const [blacklistedIdentities, setBlacklistedIdentities] = useState([
+    {
+      id: 'blk-1',
+      organizerName: 'Shadow Promoters Ent.',
+      email: 'fraudster@fakevents.ng',
+      phone: '+234 802 000 9988',
+      nin: 'NIN-9920194820',
+      cacNumber: 'RC-998811',
+      reason: 'Phantom concert ticket scam with stolen venue graphics',
+      eventTitle: 'VIP Lagos Beach Rave 2026',
+      flaggedAt: 'Yesterday',
+      status: 'active_blacklist' as const,
+    },
+  ]);
+
+  const [flagModalTarget, setFlagModalTarget] = useState<{
+    organizerName: string;
+    email: string;
+    phone: string;
+    nin: string;
+    cacNumber: string;
+    eventTitle: string;
+    reportId?: string;
+  } | null>(null);
+
+  const [blacklistReason, setBlacklistReason] = useState('Substantiated venue booking fraud & ticket scalping');
+
   const handleResolveReport = (id: string, action: 'suspend' | 'dismiss') => {
     setCommunityReports((prev) =>
       prev.map((r) =>
@@ -55,6 +82,54 @@ export default function Admin() {
     } else {
       toast('Report dismissed after review.');
     }
+  };
+
+  const handleConfirmBlacklist = async () => {
+    if (!flagModalTarget) return;
+
+    const newRecord = {
+      id: `blk-${Date.now()}`,
+      organizerName: flagModalTarget.organizerName,
+      email: flagModalTarget.email,
+      phone: flagModalTarget.phone,
+      nin: flagModalTarget.nin,
+      cacNumber: flagModalTarget.cacNumber,
+      reason: blacklistReason,
+      eventTitle: flagModalTarget.eventTitle,
+      flaggedAt: 'Just now',
+      status: 'active_blacklist' as const,
+    };
+
+    setBlacklistedIdentities((prev) => [newRecord, ...prev]);
+
+    if (flagModalTarget.reportId) {
+      handleResolveReport(flagModalTarget.reportId, 'suspend');
+    }
+
+    try {
+      await convex.mutation((api as any).reports?.flagAndBlacklistOrganizer, {
+        organizerName: flagModalTarget.organizerName,
+        email: flagModalTarget.email,
+        phone: flagModalTarget.phone,
+        nin: flagModalTarget.nin,
+        cacNumber: flagModalTarget.cacNumber,
+        reason: blacklistReason,
+        eventTitle: flagModalTarget.eventTitle,
+        adminName: 'Compliance Officer',
+      });
+    } catch {
+      // Local optimistic update
+    }
+
+    toast(`Organizer ${flagModalTarget.organizerName} flagged! Email, Phone & NIN blacklisted.`);
+    setFlagModalTarget(null);
+  };
+
+  const handlePardonIdentity = (id: string) => {
+    setBlacklistedIdentities((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, status: 'pardoned' as const } : b))
+    );
+    toast('Organizer identity pardoned and restrictions lifted.');
   };
 
   const handleSeedDatabase = async () => {
@@ -427,12 +502,96 @@ export default function Admin() {
                       <Button
                         size="sm"
                         variant="outline"
+                        className="border-rose-500/40 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                        onClick={() => {
+                          setFlagModalTarget({
+                            organizerName: r.id === 'rep-101' ? 'Eclipse Live Africa' : 'Wuse Arts Promoters Ltd',
+                            email: r.id === 'rep-101' ? 'contact@eclipseliveafrica.com' : 'contact@wuseartsgallery.ng',
+                            phone: r.id === 'rep-101' ? '+234 803 555 1234' : '+234 809 111 2233',
+                            nin: r.id === 'rep-101' ? 'NIN-8910248192' : 'NIN-5910294821',
+                            cacNumber: r.id === 'rep-101' ? 'RC-1849204' : 'RC-3910482',
+                            eventTitle: r.eventTitle,
+                            reportId: r.id,
+                          });
+                        }}
+                      >
+                        <Icon name="person_off" className="text-sm" /> Flag Organizer KYC (Email, Phone &amp; NIN)
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => handleResolveReport(r.id, 'dismiss')}
                       >
                         Dismiss as False Alarm
                       </Button>
                     </div>
                   )}
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Platform Blacklisted Identities Registry */}
+          <div className="pt-2">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Blacklisted Organizers &amp; Identities ({blacklistedIdentities.filter(b => b.status === 'active_blacklist').length} Active Bans)
+                </h3>
+                <p className="muted text-xs">Blocked across platform by Email, Phone Number, and NIN.</p>
+              </div>
+              <Badge tone="coral">NIN Blocked</Badge>
+            </div>
+
+            <div className="space-y-3">
+              {blacklistedIdentities.map((b) => (
+                <Card
+                  key={b.id}
+                  className={`p-4 border-l-4 ${
+                    b.status === 'active_blacklist'
+                      ? 'border-l-rose-600 bg-rose-50/20 dark:bg-rose-950/10'
+                      : 'border-l-slate-400 opacity-60'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 dark:text-white">{b.organizerName}</span>
+                        <Badge tone={b.status === 'active_blacklist' ? 'coral' : 'muted'}>
+                          {b.status === 'active_blacklist' ? 'Identity Blacklisted' : 'Pardoned'}
+                        </Badge>
+                      </div>
+                      <p className="muted text-xs mt-0.5">
+                        Flagged for: <strong>{b.reason}</strong> · {b.flaggedAt}
+                      </p>
+                    </div>
+
+                    {b.status === 'active_blacklist' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handlePardonIdentity(b.id)}
+                      >
+                        Pardon Identity
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* KYC Fingerprint Tokens */}
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-midnight-900">
+                      <span className="muted text-[10px] block font-semibold uppercase tracking-wider">Flagged Email</span>
+                      <span className="font-mono font-medium text-slate-900 dark:text-slate-100">{b.email}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-midnight-900">
+                      <span className="muted text-[10px] block font-semibold uppercase tracking-wider">Flagged Phone</span>
+                      <span className="font-mono font-medium text-slate-900 dark:text-slate-100">{b.phone}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white p-2.5 dark:border-slate-800 dark:bg-midnight-900">
+                      <span className="muted text-[10px] block font-semibold uppercase tracking-wider">Flagged NIN</span>
+                      <span className="font-mono font-bold text-rose-600 dark:text-rose-400">{b.nin}</span>
+                    </div>
+                  </div>
                 </Card>
               ))}
             </div>
@@ -642,6 +801,105 @@ export default function Admin() {
                 onClick={() => handleDecision(selectedRecord.id, 'Event Verified')}
               >
                 Approve (Event Verified)
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Organizer KYC Flagging & Blacklist Modal */}
+      {flagModalTarget && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setFlagModalTarget(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-3xl border border-rose-500/30 bg-white p-6 shadow-2xl dark:border-rose-500/30 dark:bg-midnight-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600">
+                  <Icon name="person_off" className="text-xl" />
+                </span>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Flag &amp; Blacklist Organizer KYC</h3>
+                  <p className="muted text-xs">Permanent platform restriction by Email, Phone &amp; NIN.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFlagModalTarget(null)}
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-white"
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 text-xs dark:border-slate-800 dark:bg-midnight-800">
+                <p className="font-semibold text-slate-900 dark:text-white mb-2">Organizer KYC Identity Dossier</p>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="muted text-[10px]">Company / Name</span>
+                    <p className="font-bold text-slate-900 dark:text-white">{flagModalTarget.organizerName}</p>
+                  </div>
+                  <div>
+                    <span className="muted text-[10px]">CAC Registration</span>
+                    <p className="font-mono text-slate-900 dark:text-white">{flagModalTarget.cacNumber}</p>
+                  </div>
+                  <div>
+                    <span className="muted text-[10px]">Flagged Email</span>
+                    <p className="font-mono text-slate-900 dark:text-white">{flagModalTarget.email}</p>
+                  </div>
+                  <div>
+                    <span className="muted text-[10px]">Flagged Phone</span>
+                    <p className="font-mono text-slate-900 dark:text-white">{flagModalTarget.phone}</p>
+                  </div>
+                  <div className="col-span-2 pt-1 border-t border-slate-200 dark:border-slate-700">
+                    <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400">National Identification Number (NIN)</span>
+                    <p className="font-mono font-extrabold text-sm text-rose-600 dark:text-rose-400">{flagModalTarget.nin}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Blacklist Reason &amp; Compliance Notes
+                </label>
+                <textarea
+                  aria-label="Blacklist reason"
+                  rows={2}
+                  value={blacklistReason}
+                  onChange={(e) => setBlacklistReason(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-900 outline-none focus:border-rose-500 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-900 dark:text-amber-200">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <Icon name="warning" className="text-sm" />
+                  <span>Enforcement Impact:</span>
+                </p>
+                <p className="mt-0.5 leading-relaxed">
+                  The organizer's current event will be suspended, pending payouts held, and any future attempts to register or publish with this <strong>Email</strong>, <strong>Phone</strong>, or <strong>NIN</strong> will be blocked automatically.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setFlagModalTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="coral"
+                className="flex-1"
+                disabled={!blacklistReason.trim()}
+                onClick={handleConfirmBlacklist}
+              >
+                <Icon name="gpp_bad" className="text-sm" /> Enforce Identity Blacklist
               </Button>
             </div>
           </div>

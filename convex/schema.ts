@@ -382,5 +382,24 @@ export default defineSchema({
   })
     .index('by_eventId', ['eventId'])
     .index('by_rating', ['rating']),
+
+  // 17. Blacklisted & Flagged Identities (Fraud & Rogue Organizer Blacklist)
+  blacklisted_identities: defineTable({
+    organizerName: v.string(),
+    email: v.string(),
+    phone: v.string(),
+    nin: v.string(),
+    cacNumber: v.optional(v.string()),
+    reason: v.string(),
+    eventId: v.optional(v.string()),
+    eventTitle: v.optional(v.string()),
+    flaggedBy: v.string(),
+    status: v.union(v.literal('active_blacklist'), v.literal('under_appeal'), v.literal('pardoned')),
+    createdAt: v.number(),
+  })
+    .index('by_email', ['email'])
+    .index('by_phone', ['phone'])
+    .index('by_nin', ['nin'])
+    .index('by_status', ['status']),
 });
 

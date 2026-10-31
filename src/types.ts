@@ -94,6 +94,11 @@ export interface Organiser {
   reviews: number;
   verified: boolean;
   cacNumber?: string;
+  email?: string;
+  phone?: string;
+  nin?: string;
+  isFlagged?: boolean;
+  flagReason?: string;
   status?: VerificationStatus;
 }
 
