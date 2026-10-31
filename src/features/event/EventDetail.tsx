@@ -4,7 +4,7 @@ import { Icon } from '../../design-system/Icon';
 import { getEvent, getOrganiser, getSpace, CATEGORY_ICON } from '../../data/mock';
 import { Badge, BottomSheet, Button, Card, Cover, EmptyState, Stars, VerifiedBadge } from '../../design-system/ui';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
-import { useAllEvents, usePlanItems, useStore } from '../../store';
+import { useAllEvents, useAllSpaces, usePlanItems, useStore } from '../../store';
 import { detectClashes } from '../../lib/clash';
 import { fmtDate, fmtTime, mapLink, naira } from '../../lib/format';
 import { toast } from '../../lib/fx';
@@ -15,6 +15,7 @@ import { recommend } from '../../lib/recommend';
 export default function EventDetail() {
   const { id } = useParams();
   const all = useAllEvents();
+  const allSpaces = useAllSpaces();
   const event = all.find((e) => e.id === id) ?? getEvent(id ?? '');
   const nav = useNavigate();
   const add = useAddToPlan();
@@ -37,7 +38,7 @@ export default function EventDetail() {
     );
   }
 
-  const sp = getSpace(event.spaceId);
+  const sp = allSpaces.find((s) => s.id === event.spaceId) ?? getSpace(event.spaceId);
   const org = getOrganiser(event.organiserId);
   const tier = event.tiers.find((t) => t.id === tierId) ?? event.tiers[0];
   const inCart = plan.some((p) => p.event.id === event.id);
