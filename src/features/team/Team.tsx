@@ -11,6 +11,7 @@ interface Executive {
   location: string;
   bio: string;
   image: string;
+  imagePosition?: string;
   linkedin?: string;
   twitter?: string;
 }
@@ -52,7 +53,8 @@ const EXECUTIVES: Executive[] = [
     name: 'Sumayya Suleiman',
     location: 'Abuja, Nigeria',
     bio: 'Leading financial governance, multi-rail Naira settlement systems (Card, Instant Bank Transfer, USSD), organizer payout escrow, and transaction security against ticket scalping.',
-    image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=85',
+    image: '/team/sumayya-suleiman.jpg',
+    imagePosition: 'object-[center_28%]',
     linkedin: 'https://linkedin.com',
     twitter: 'https://x.com',
   },
@@ -147,7 +149,7 @@ export default function Team() {
                   src={exec.image}
                   alt={exec.name}
                   loading="lazy"
-                  className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
+                  className={`h-full w-full object-cover ${exec.imagePosition || 'object-center'} transition-transform duration-500 group-hover:scale-105`}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
                 <div className="absolute bottom-3.5 left-4 right-4 flex items-end justify-between">
