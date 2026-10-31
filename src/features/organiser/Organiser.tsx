@@ -582,20 +582,18 @@ function Create({ onDone }: { onDone: () => void }) {
 
       {/* COORDINA Platform Fee Breakdown */}
       <div
-        className={`rounded-2xl border p-4 transition-colors ${
-          postingFee.isFree
+        className={`rounded-2xl border p-4 transition-colors ${postingFee.isFree
             ? 'border-brand-500/30 bg-brand-500/5 dark:bg-brand-500/10'
             : 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-midnight-900/60'
-        }`}
+          }`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2.5">
             <span
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
-                postingFee.isFree
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${postingFee.isFree
                   ? 'bg-brand-500 text-white'
                   : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-              }`}
+                }`}
             >
               <Icon name={postingFee.isFree ? 'payments' : 'check_circle'} className="text-base" />
             </span>
@@ -915,11 +913,10 @@ function Payouts() {
 
         {transferResult && (
           <div
-            className={`mt-4 flex items-center gap-2 rounded-xl border p-3.5 text-xs font-medium ${
-              transferResult.ok
+            className={`mt-4 flex items-center gap-2 rounded-xl border p-3.5 text-xs font-medium ${transferResult.ok
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
                 : 'border-coral-500/40 bg-coral-500/10 text-coral-800 dark:text-coral-200'
-            }`}
+              }`}
           >
             <Icon name={transferResult.ok ? 'check_circle' : 'error'} filled />
             <span>{transferResult.msg}</span>
