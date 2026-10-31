@@ -4,9 +4,6 @@
  * Venue Booking Requests, Password Reset, and Verification Updates.
  */
 
-import { convex } from './convex';
-import { api } from '../../convex/_generated/api';
-
 interface SendEmailParams {
   to: string;
   subject: string;
@@ -14,7 +11,7 @@ interface SendEmailParams {
 }
 
 export async function sendEmail({ to, subject, html }: SendEmailParams) {
-  // 1. Try Vercel Serverless Function (same-origin, zero CORS issues on web)
+  // 1. Dispatch via Vercel Serverless Function (same-origin, zero CORS issues on web)
   try {
     const res = await fetch('/api/send-email', {
       method: 'POST',
@@ -26,24 +23,16 @@ export async function sendEmail({ to, subject, html }: SendEmailParams) {
 
     if (res.ok) {
       const data = await res.json();
-      return { success: true, id: data.id };
+      if (data.success && data.id) {
+        return { success: true, id: data.id };
+      }
+      if (data.deferred || data.error) {
+        console.info('[Email Service] Vercel email handler:', data.message || data.error);
+        return { success: false, error: data.message || data.error };
+      }
     }
-  } catch {
-    // If not on Vercel or running in standalone Capacitor, fall through
-  }
-
-  // 2. Try Convex server action (zero CORS, server-to-server)
-  try {
-    const convexRes: any = await convex.action((api as any).emails?.sendEmailAction, {
-      to,
-      subject,
-      html,
-    });
-    if (convexRes?.success) {
-      return convexRes;
-    }
-  } catch {
-    // Convex action fallback
+  } catch (err) {
+    console.info('[Email Service] Standalone or offline fallback:', err);
   }
 
   return { success: false, error: 'Email service deferred' };

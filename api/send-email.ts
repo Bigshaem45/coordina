@@ -1,9 +1,10 @@
 export default async function handler(req: any, res: any) {
   // Handle CORS preflight if called cross-origin
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(200).end();
   }
 
@@ -16,15 +17,28 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Missing required email fields (to, subject, html)' });
   }
 
-  const apiKey =
+  // Safely extract and sanitize API key from environment
+  const apiKey = (
     process.env.RESEND_API_KEY ||
     process.env.VITE_RESEND_API_KEY ||
-    '';
+    ''
+  ).trim().replace(/^["']|["']$/g, '');
 
-  const fromEmail =
+  const fromEmail = (
     process.env.RESEND_FROM_EMAIL ||
     process.env.VITE_RESEND_FROM_EMAIL ||
-    'COORDINA <onboarding@resend.dev>';
+    'COORDINA <onboarding@resend.dev>'
+  ).trim().replace(/^["']|["']$/g, '');
+
+  // Guard against missing API key in Vercel settings without failing with a raw 401
+  if (!apiKey) {
+    console.warn('[Vercel send-email] RESEND_API_KEY is not configured in Vercel environment variables.');
+    return res.status(200).json({
+      success: false,
+      deferred: true,
+      message: 'RESEND_API_KEY is not configured in Vercel Environment Variables. Please add RESEND_API_KEY to your Vercel Project Settings.',
+    });
+  }
 
   try {
     const response = await fetch('https://api.resend.com/emails', {
@@ -42,11 +56,20 @@ export default async function handler(req: any, res: any) {
     });
 
     const data = await response.json();
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(response.status).json(data);
+    if (!response.ok) {
+      console.warn('[Vercel send-email] Resend returned status', response.status, data);
+      return res.status(200).json({
+        success: false,
+        error: data?.message || 'Email delivery failed via Resend',
+        statusCode: response.status,
+      });
+    }
+
+    return res.status(200).json({ success: true, id: data.id });
   } catch (err: any) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(500).json({ error: err.message || 'Internal error dispatching email' });
+    return res.status(200).json({
+      success: false,
+      error: err.message || 'Internal error dispatching email',
+    });
   }
 }
-
