@@ -4,8 +4,8 @@
  * Venue Booking Requests, Password Reset, and Verification Updates.
  */
 
-const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY || '';
-const SENDER_EMAIL = import.meta.env.VITE_RESEND_FROM_EMAIL || 'COORDINA <onboarding@resend.dev>';
+import { convex } from './convex';
+import { api } from '../../convex/_generated/api';
 
 interface SendEmailParams {
   to: string;
@@ -14,31 +14,39 @@ interface SendEmailParams {
 }
 
 export async function sendEmail({ to, subject, html }: SendEmailParams) {
+  // 1. Try Vercel Serverless Function (same-origin, zero CORS issues on web)
   try {
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch('/api/send-email', {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: SENDER_EMAIL,
-        to: [to],
-        subject,
-        html,
-      }),
+      body: JSON.stringify({ to, subject, html }),
     });
 
-    const data = await res.json();
-    if (!res.ok) {
-      console.warn('Resend email error:', data);
-      return { success: false, error: data };
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, id: data.id };
     }
-    return { success: true, id: data.id };
-  } catch (err) {
-    console.warn('Network error sending email via Resend:', err);
-    return { success: false, error: err };
+  } catch {
+    // If not on Vercel or running in standalone Capacitor, fall through
   }
+
+  // 2. Try Convex server action (zero CORS, server-to-server)
+  try {
+    const convexRes: any = await convex.action((api as any).emails?.sendEmailAction, {
+      to,
+      subject,
+      html,
+    });
+    if (convexRes?.success) {
+      return convexRes;
+    }
+  } catch {
+    // Convex action fallback
+  }
+
+  return { success: false, error: 'Email service deferred' };
 }
 
 /** Wrapper HTML container with COORDINA signature purple & minimalist styling */
