@@ -1,13 +1,36 @@
 import { Suspense, lazy, useEffect } from 'react';
-import { BrowserRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useNavigate, Link } from 'react-router-dom';
 import { Layout } from './features/Layout';
 import Home from './features/discover/Home';
 import Onboarding from './features/onboarding/Onboarding';
 import Landing from './features/landing/Landing';
 import Auth from './features/auth/Auth';
-import { Skeleton } from './design-system/ui';
+import { Button, Skeleton } from './design-system/ui';
+import { Icon } from './design-system/Icon';
 import { ErrorBoundary } from './design-system/ErrorBoundary';
 import { initCapacitor } from './lib/capacitor';
+
+function NotFound() {
+  return (
+    <div className="flex min-h-[75vh] flex-col items-center justify-center px-4 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-300">
+        <Icon name="explore_off" className="text-3xl" />
+      </div>
+      <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">Page Not Found</h1>
+      <p className="muted mt-2 max-w-sm text-sm">
+        The link you followed doesn’t exist or has moved. Explore live events or head back home.
+      </p>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <Link to="/home">
+          <Button>Explore Events</Button>
+        </Link>
+        <Link to="/">
+          <Button variant="outline">Landing Page</Button>
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 function NativeLifecycleBridge() {
   const navigate = useNavigate();
@@ -67,7 +90,9 @@ export default function App() {
               <Route path="organiser" element={<Organiser />} />
               <Route path="admin" element={<Admin />} />
               <Route path="design-system" element={<DesignSystem />} />
+              <Route path="*" element={<NotFound />} />
             </Route>
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
       </BrowserRouter>

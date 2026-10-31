@@ -20,3 +20,4 @@ export type TableNames =
 export type Id<TableName extends TableNames> = GenericId<TableName>;
 export type Doc<TableName extends TableNames> = any;
 export type DataModel = any;
+

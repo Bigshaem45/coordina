@@ -125,3 +125,4 @@ export const updateProfile = mutation({
     return await ctx.db.get(id);
   },
 });
+

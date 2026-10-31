@@ -337,3 +337,4 @@ export default defineSchema({
     .index('by_userId', ['userId'])
     .index('by_read', ['read']),
 });
+

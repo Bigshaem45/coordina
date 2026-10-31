@@ -153,3 +153,4 @@ export const joinSquad = mutation({
     return squad._id;
   },
 });
+

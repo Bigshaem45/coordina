@@ -8,3 +8,4 @@ export const convex = new ConvexReactClient(CONVEX_URL);
 export const isConvexConfigured = () => {
   return Boolean(import.meta.env.VITE_CONVEX_URL);
 };
+
