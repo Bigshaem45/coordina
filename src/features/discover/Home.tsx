@@ -11,6 +11,7 @@ import { recommend } from '../../lib/recommend';
 
 export default function Home() {
   const city = useStore((s) => s.city);
+  const user = useStore((s) => s.user);
   const setCity = useStore((s) => s.setCity);
   const interests = useStore((s) => s.interests);
   const vibe = useStore((s) => s.vibe);
@@ -97,6 +98,43 @@ export default function Home() {
           <Icon name="chevron_right" className="text-slate-400" />
         </Link>
       </div>
+
+      {/* Guest Mode Exploration Banner */}
+      {!user && (
+        <div className="mx-4 mt-4 rounded-2xl border border-brand-500/30 bg-gradient-to-r from-brand-500/10 via-brand-500/5 to-transparent p-4 md:mx-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white shadow-sm">
+                <Icon name="explore" className="text-lg" />
+              </span>
+              <div>
+                <p className="text-xs font-bold text-slate-900 dark:text-white">Exploring as a Guest</p>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Browse verified Nigerian events &amp; venues freely. Sign in to add items to your plan, check clashes, and book tickets.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link to="/auth?mode=signin">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
+                >
+                  Log In
+                </button>
+              </Link>
+              <Link to="/auth?mode=signup">
+                <button
+                  type="button"
+                  className="rounded-xl bg-brand-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-brand-600"
+                >
+                  Sign Up
+                </button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clean Category Pills */}
       <div className="no-scrollbar mt-4 flex w-full max-w-full gap-2 overflow-x-auto px-4 pb-1 md:px-0">

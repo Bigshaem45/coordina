@@ -28,6 +28,7 @@ export default function PlanCart() {
   const items = usePlanItems();
   const all = useAllEvents();
   const nav = useNavigate();
+  const user = useStore((s) => s.user);
   const budget = useStore((s) => s.budget);
   const setBudget = useStore((s) => s.setBudget);
   const remove = useStore((s) => s.removeFromCart);
@@ -36,6 +37,15 @@ export default function PlanCart() {
   const [kept, setKept] = useState<string[]>([]);
   const [sheet, setSheet] = useState<{ clash: Clash; mode: 'swap' | 'alt' } | null>(null);
   const [editBudget, setEditBudget] = useState(false);
+
+  const handleProceedToCheckout = () => {
+    if (!user) {
+      toast('Please log in to checkout your plan.');
+      nav(`/auth?mode=signin&redirect=/checkout`);
+      return;
+    }
+    nav('/checkout');
+  };
 
   const clashes = useMemo(() => detectClashes(items, budget), [items, budget]);
   const active = clashes.filter((c) => !kept.includes(c.id));
@@ -326,8 +336,8 @@ export default function PlanCart() {
               </div>
             </div>
 
-            <Button full size="lg" className="mt-5 hidden md:inline-flex" onClick={() => nav('/checkout')}>
-              {hardOpen ? 'Proceed Anyway' : `Checkout · ${naira(fees.total)}`}
+            <Button full size="lg" className="mt-5 hidden md:inline-flex" onClick={handleProceedToCheckout}>
+              {!user ? 'Log In to Checkout' : hardOpen ? 'Proceed Anyway' : `Checkout · ${naira(fees.total)}`}
             </Button>
           </Card>
         </div>
@@ -340,8 +350,8 @@ export default function PlanCart() {
             <p className="muted text-[11px]">{items.length} event{items.length > 1 ? 's' : ''}</p>
             <p className="text-base font-bold text-slate-900 dark:text-white">{naira(fees.total)}</p>
           </div>
-          <Button size="lg" className="px-7" onClick={() => nav('/checkout')}>
-            {hardOpen ? 'Checkout Anyway' : 'Checkout'}
+          <Button size="lg" className="px-7" onClick={handleProceedToCheckout}>
+            {!user ? 'Log In to Checkout' : hardOpen ? 'Checkout Anyway' : 'Checkout'}
           </Button>
         </div>
       </div>

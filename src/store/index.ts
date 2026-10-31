@@ -6,6 +6,7 @@ import { api } from '../../convex/_generated/api';
 import type { CEvent, Ticket, Vibe, Category, City, EventVerificationRecord, AuditLog, VerificationStatus, Space, BlacklistedIdentity } from '../types';
 import { events as seedEvents, spaces as seedSpaces, initialVerifications, initialAuditLogs, AREAS } from '../data/mock';
 import type { PlanItem } from '../lib/clash';
+import { toast } from '../lib/fx';
 
 export interface CartLine { eventId: string; tierId: string; qty: number }
 export interface Order { id: string; at: string; total: number; fees: number; method: string; ticketIds: string[] }
@@ -207,7 +208,14 @@ export const useStore = create<State>()(
       setTheme: (theme) => set({ theme }), setBudget: (budget) => set({ budget }), setCity: (city) => set({ city }),
       toggleLowData: () => set((s) => ({ lowData: !s.lowData })),
 
-      addToCart: (l) => set((s) => ({ cart: [...s.cart.filter((c) => c.eventId !== l.eventId), l] })),
+      addToCart: (l) => {
+        const u = get().user;
+        if (!u) {
+          toast('Please log in to add events to your plan.');
+          return;
+        }
+        set((s) => ({ cart: [...s.cart.filter((c) => c.eventId !== l.eventId), l] }));
+      },
       removeFromCart: (eventId) => set((s) => ({ cart: s.cart.filter((c) => c.eventId !== eventId) })),
       setQty: (eventId, qty) => set((s) => ({ cart: s.cart.map((c) => (c.eventId === eventId ? { ...c, qty: Math.max(1, Math.min(10, qty)) } : c)) })),
       swapInCart: (oldId, newEventId) => {

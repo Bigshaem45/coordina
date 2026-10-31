@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
 import type { CEvent } from '../../types';
 import { getSpace, minPrice } from '../../data/mock';
@@ -11,7 +11,16 @@ import { flyToCart, toast } from '../../lib/fx';
 
 export function useAddToPlan() {
   const addToCart = useStore((s) => s.addToCart);
+  const user = useStore((s) => s.user);
+  const nav = useNavigate();
+  const loc = useLocation();
+
   return (e: CEvent, from?: DOMRect, tierId?: string, qty = 1) => {
+    if (!user) {
+      toast('Please log in to add events to your plan.');
+      nav(`/auth?mode=signin&redirect=${encodeURIComponent(loc.pathname + loc.search)}`);
+      return;
+    }
     const tier = e.tiers.find((t) => t.id === tierId) ?? e.tiers.find((t) => t.remaining > 0) ?? e.tiers[0];
     addToCart({ eventId: e.id, tierId: tier.id, qty });
     if (from) flyToCart(from, e.image);

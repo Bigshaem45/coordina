@@ -25,6 +25,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [verificationCode, setVerificationCode] = useState(paramCode);
+  const redirectUrl = params.get('redirect');
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -43,6 +44,18 @@ export default function Auth() {
     resetPassword,
   } = useStore();
   const nav = useNavigate();
+
+  const navigateAfterAuth = (activeRole?: UserRole) => {
+    if (redirectUrl) {
+      nav(redirectUrl);
+      return;
+    }
+    if (activeRole === 'organiser') {
+      nav('/organiser');
+    } else {
+      nav(onboarded ? '/home' : '/onboarding');
+    }
+  };
 
   useEffect(() => {
     if (paramEmail && !email) setEmail(paramEmail);
@@ -149,11 +162,7 @@ export default function Auth() {
         }
         toast('Email verified successfully! Welcome to COORDINA.');
         const activeUser = useStore.getState().user;
-        if (activeUser?.role === 'organiser') {
-          nav('/organiser');
-        } else {
-          nav(onboarded ? '/home' : '/onboarding');
-        }
+        navigateAfterAuth(activeUser?.role);
       } catch (err: any) {
         setError(err?.message || 'Verification failed. Please try again.');
       } finally {
@@ -209,11 +218,7 @@ export default function Auth() {
         setError(err);
       } else {
         const activeUser = useStore.getState().user;
-        if (activeUser?.role === 'organiser') {
-          nav('/organiser');
-        } else {
-          nav(onboarded ? '/home' : '/onboarding');
-        }
+        navigateAfterAuth(activeUser?.role);
       }
     } catch (err: any) {
       console.warn('Auth processing error:', err);
@@ -221,11 +226,7 @@ export default function Auth() {
       if (localErr) setError(localErr);
       else {
         const activeUser = useStore.getState().user;
-        if (activeUser?.role === 'organiser') {
-          nav('/organiser');
-        } else {
-          nav(onboarded ? '/home' : '/onboarding');
-        }
+        navigateAfterAuth(activeUser?.role);
       }
     } finally {
       setBusy(false);

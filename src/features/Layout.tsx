@@ -118,6 +118,15 @@ export function Layout() {
 
           {/* Right Action Icons (Studio + Plan Cart) */}
           <div className="flex items-center gap-2">
+            {!user && (
+              <Link
+                to="/auth?mode=signin"
+                className="inline-flex h-8 md:h-9 items-center gap-1 rounded-full bg-brand-500 px-3 md:px-3.5 text-xs font-semibold text-white shadow-sm shadow-brand-500/20 transition hover:bg-brand-600"
+              >
+                <Icon name="login" className="text-[15px]" />
+                <span>Log In</span>
+              </Link>
+            )}
             <Link
               to="/organiser"
               className={`inline-flex h-8 md:h-9 items-center gap-1.5 rounded-full border px-2.5 md:px-3.5 text-xs font-medium transition ${
@@ -235,6 +244,7 @@ export function Layout() {
 function CartDrawer() {
   const open = useStore((s) => s.cartOpen);
   const setOpen = useStore((s) => s.setCartOpen);
+  const user = useStore((s) => s.user);
   const items = usePlanItems();
   const remove = useStore((s) => s.removeFromCart);
   const nav = useNavigate();
@@ -307,23 +317,40 @@ function CartDrawer() {
               ))}
             </div>
 
-            <div className="mt-4 border-t border-[var(--border)] pt-4 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="muted">Estimated total</span>
-                <span className="text-base font-semibold text-slate-900 dark:text-slate-100">{naira(f.total)}</span>
+            {!user ? (
+              <div className="mt-4 border-t border-[var(--border)] pt-4 text-center">
+                <p className="mb-3 text-xs text-slate-600 dark:text-slate-400">
+                  Please sign in to save your plan, check itinerary clashes, and checkout tickets.
+                </p>
+                <Button
+                  full
+                  onClick={() => {
+                    setOpen(false);
+                    nav('/auth?mode=signin&redirect=/plan');
+                  }}
+                >
+                  <Icon name="login" /> Sign In to Continue
+                </Button>
               </div>
-              <Button
-                full
-                className="mt-3"
-                disabled={!items.length}
-                onClick={() => {
-                  setOpen(false);
-                  nav('/plan');
-                }}
-              >
-                Open Plan & Clash Check
-              </Button>
-            </div>
+            ) : (
+              <div className="mt-4 border-t border-[var(--border)] pt-4 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="muted">Estimated total</span>
+                  <span className="text-base font-semibold text-slate-900 dark:text-slate-100">{naira(f.total)}</span>
+                </div>
+                <Button
+                  full
+                  className="mt-3"
+                  disabled={!items.length}
+                  onClick={() => {
+                    setOpen(false);
+                    nav('/plan');
+                  }}
+                >
+                  Open Plan &amp; Clash Check
+                </Button>
+              </div>
+            )}
           </motion.aside>
         </div>
       )}

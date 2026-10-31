@@ -13,12 +13,22 @@ export default function SpaceProfile() {
   const nav = useNavigate();
   const spaces = useAllSpaces();
   const allEvents = useAllEvents();
+  const user = useStore((s) => s.user);
   const sp = spaces.find((s) => s.id === id) ?? getSpace(id ?? '');
   const addBooking = useStore((s) => s.addBooking);
   const report = useStore((s) => s.report);
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState('');
   const [guests, setGuests] = useState(12);
+
+  const handleOpenReservation = () => {
+    if (!user) {
+      toast('Please log in to reserve spaces.');
+      nav(`/auth?mode=signin&redirect=${encodeURIComponent(location.pathname)}`);
+      return;
+    }
+    setOpen(true);
+  };
 
   if (!sp) {
     return (
@@ -167,8 +177,8 @@ export default function SpaceProfile() {
             <p className="muted text-xs">Private table &amp; space hire</p>
             <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">From {naira(sp.bookingFrom)}</p>
             <p className="muted mt-1 text-xs">Direct confirmation from {sp.name} within 24 hours.</p>
-            <Button full size="lg" className="mt-4" onClick={() => setOpen(true)}>
-              Reserve Space
+            <Button full size="lg" className="mt-4" onClick={handleOpenReservation}>
+              {user ? 'Reserve Space' : 'Log In to Reserve'}
             </Button>
             <Link to="/map" className="mt-2.5 block">
               <Button full variant="outline">
@@ -196,8 +206,8 @@ export default function SpaceProfile() {
             <p className="muted text-[11px]">Bookings from</p>
             <p className="text-base font-bold text-slate-900 dark:text-white">{naira(sp.bookingFrom)}</p>
           </div>
-          <Button size="lg" onClick={() => setOpen(true)}>
-            Reserve Space
+          <Button size="lg" onClick={handleOpenReservation}>
+            {user ? 'Reserve Space' : 'Log In to Reserve'}
           </Button>
         </div>
       </div>

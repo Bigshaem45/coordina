@@ -22,6 +22,7 @@ export default function EventDetail() {
   const nav = useNavigate();
   const add = useAddToPlan();
   const plan = usePlanItems();
+  const user = useStore((s) => s.user);
   const budget = useStore((s) => s.budget);
   const [tierId, setTierId] = useState<string | null>(null);
   const [qty, setQty] = useState(1);
@@ -401,8 +402,19 @@ export default function EventDetail() {
               </div>
 
               <div className="mt-4 space-y-2.5">
-                <Button full size="lg" onClick={() => nav(`/checkout?only=${event.id}&tier=${tier.id}&qty=${qty}`)}>
-                  Buy Ticket Now
+                <Button
+                  full
+                  size="lg"
+                  onClick={() => {
+                    if (!user) {
+                      toast('Please log in to purchase tickets.');
+                      nav(`/auth?mode=signin&redirect=${encodeURIComponent(location.pathname)}`);
+                      return;
+                    }
+                    nav(`/checkout?only=${event.id}&tier=${tier.id}&qty=${qty}`);
+                  }}
+                >
+                  {user ? 'Buy Ticket Now' : 'Log In to Buy Ticket'}
                 </Button>
                 <Button
                   full
@@ -410,8 +422,8 @@ export default function EventDetail() {
                   variant="outline"
                   onClick={() => add(event, heroRef.current?.getBoundingClientRect(), tier.id, qty)}
                 >
-                  <Icon name={inCart ? 'check' : 'add'} className="text-base" />
-                  {inCart ? 'Update in Plan Cart' : 'Add to Plan Cart'}
+                  <Icon name={inCart ? 'check' : user ? 'add' : 'lock'} className="text-base" />
+                  {inCart ? 'Update in Plan Cart' : user ? 'Add to Plan Cart' : 'Log In to Add to Plan'}
                 </Button>
               </div>
             </Card>
@@ -508,13 +520,20 @@ export default function EventDetail() {
             className="flex-1"
             onClick={() => add(event, heroRef.current?.getBoundingClientRect(), tier.id, qty)}
           >
-            {inCart ? 'Saved' : '+ Plan'}
+            {inCart ? 'Saved' : user ? '+ Plan' : 'Log In'}
           </Button>
           <Button
             className="flex-1"
-            onClick={() => nav(`/checkout?only=${event.id}&tier=${tier.id}&qty=${qty}`)}
+            onClick={() => {
+              if (!user) {
+                toast('Please log in to purchase tickets.');
+                nav(`/auth?mode=signin&redirect=${encodeURIComponent(location.pathname)}`);
+                return;
+              }
+              nav(`/checkout?only=${event.id}&tier=${tier.id}&qty=${qty}`);
+            }}
           >
-            Buy Ticket
+            {user ? 'Buy Ticket' : 'Log In to Buy'}
           </Button>
         </div>
       </div>
