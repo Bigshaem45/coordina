@@ -4,6 +4,8 @@ import { Icon } from '../../design-system/Icon';
 import { Button, Card, Cover, EmptyState } from '../../design-system/ui';
 import { useAllEvents, useStore } from '../../store';
 import { computeFees, fmtDate, naira } from '../../lib/format';
+import { convex } from '../../lib/convex';
+import { api } from '../../../convex/_generated/api';
 
 type Method = 'Card' | 'Bank transfer' | 'USSD';
 
@@ -46,12 +48,29 @@ export default function Checkout() {
     saved ||
     (card.num.replace(/\s/g, '').length >= 12 && card.exp.length >= 4 && card.cvv.length >= 3);
 
-  const pay = () => {
+  const pay = async () => {
     setPaying(true);
-    setTimeout(() => {
-      const o = complete(lines, f.total, f.fees, sub === 0 ? 'Free' : method);
-      nav(`/success/${o.id}`, { replace: true });
-    }, 900);
+    const o = complete(lines, f.total, f.fees, sub === 0 ? 'Free' : method);
+    try {
+      await convex.mutation(api.orders.createOrder, {
+        orderId: o.id,
+        items: rows.map((r) => ({
+          eventId: r.event.id.startsWith('event') ? undefined : (r.event.id as any),
+          tierId: r.tier.id,
+          tierName: r.tier.name,
+          quantity: r.qty,
+          unitPrice: r.tier.price,
+        })),
+        subtotal: sub,
+        total: f.total,
+        paymentMethod: sub === 0 ? 'free' : method === 'Card' ? 'card' : 'bank_transfer',
+        customerName: 'Guest Attendee',
+        customerEmail: 'attendee@coordina.app',
+      });
+    } catch (e) {
+      console.warn('Convex order sync:', e);
+    }
+    nav(`/success/${o.id}`, { replace: true });
   };
 
   const inputCls =

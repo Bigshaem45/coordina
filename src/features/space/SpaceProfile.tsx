@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
-import { events, getSpace } from '../../data/mock';
+import { getSpace } from '../../data/mock';
 import { Badge, BottomSheet, Button, Card, Cover, EmptyState, Stars, VerifiedBadge } from '../../design-system/ui';
-import { useStore } from '../../store';
+import { useStore, useAllSpaces, useAllEvents } from '../../store';
 import { naira } from '../../lib/format';
 import { toast } from '../../lib/fx';
 import { EventCard } from '../discover/EventCard';
@@ -11,7 +11,9 @@ import { EventCard } from '../discover/EventCard';
 export default function SpaceProfile() {
   const { id } = useParams();
   const nav = useNavigate();
-  const sp = getSpace(id ?? '');
+  const spaces = useAllSpaces();
+  const allEvents = useAllEvents();
+  const sp = spaces.find((s) => s.id === id) ?? getSpace(id ?? '');
   const addBooking = useStore((s) => s.addBooking);
   const report = useStore((s) => s.report);
   const [open, setOpen] = useState(false);
@@ -28,7 +30,7 @@ export default function SpaceProfile() {
     );
   }
 
-  const upcoming = events.filter((e) => e.spaceId === sp.id);
+  const upcoming = allEvents.filter((e) => e.spaceId === sp.id);
 
   return (
     <div className="pb-6 md:py-6">

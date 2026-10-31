@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Link } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
-import { CATEGORIES, AREAS, spaces, CATEGORY_PHOTO } from '../../data/mock';
+import { CATEGORIES, AREAS, CATEGORY_PHOTO } from '../../data/mock';
 import { Badge, Button, Card, Chip, Cover, EmptyState } from '../../design-system/ui';
-import { useAllEvents, useStore } from '../../store';
+import { useAllEvents, useAllSpaces, useStore } from '../../store';
 import { fmtDate, fmtTime, naira, computeOrganiserPostingFee, FREE_EVENT_RATE_PER_100 } from '../../lib/format';
 import { toast } from '../../lib/fx';
+import { convex } from '../../lib/convex';
+import { api } from '../../../convex/_generated/api';
 import type { Category, CEvent, Vibe, EventVerificationRecord } from '../../types';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { calculateRiskAssessment } from '../../lib/verification';
@@ -65,7 +67,8 @@ export default function Organiser() {
 }
 
 function Dashboard() {
-  const mine = useAllEvents().filter((e) => e.organiserId === 'o1');
+  const allEvents = useAllEvents();
+  const mine = allEvents.filter((e) => e.organiserId === 'org1' || e.organiserId === 'org2' || e.organiserId === 'o1');
   const checked = useStore((s) => s.checkedIn);
   const [codes, setCodes] = useState([{ code: 'EARLYBIRD', pct: 15, uses: 42 }]);
   const [code, setCode] = useState('');
@@ -242,12 +245,13 @@ function Dashboard() {
 
 function Create({ onDone }: { onDone: () => void }) {
   const add = useStore((s) => s.addCustomEvent);
+  const allSpaces = useAllSpaces();
   const [f, setF] = useState({
     title: '',
     category: 'Concerts' as Category,
     vibe: 'Energetic' as Vibe,
     area: 'Wuse',
-    space: 's2',
+    space: allSpaces[0]?.id || 'space1',
     date: '',
     start: '19:00',
     end: '22:00',
@@ -258,7 +262,7 @@ function Create({ onDone }: { onDone: () => void }) {
   const valid = f.title.trim() && f.date && tiers.every((t) => t.name.trim() && t.qty > 0);
   const postingFee = computeOrganiserPostingFee(tiers);
 
-  const submit = () => {
+  const submit = async () => {
     const a = AREAS[f.area];
     const start = new Date(`${f.date}T${f.start}`);
     let end = new Date(`${f.date}T${f.end}`);
@@ -272,7 +276,7 @@ function Create({ onDone }: { onDone: () => void }) {
       city: a.city,
       area: f.area,
       spaceId: f.space,
-      organiserId: 'o1',
+      organiserId: 'org1',
       start: start.toISOString(),
       end: end.toISOString(),
       image: CATEGORY_PHOTO[f.category],
@@ -286,8 +290,35 @@ function Create({ onDone }: { onDone: () => void }) {
       })),
       lat: a.lat,
       lng: a.lng,
+      verificationStatus: 'Organizer Verified',
     };
     add(ev);
+
+    try {
+      await convex.mutation(api.events.create, {
+        title: ev.title,
+        description: ev.description,
+        category: ev.category,
+        city: ev.city,
+        area: ev.area,
+        spaceId: ev.spaceId.startsWith('space') ? undefined : (ev.spaceId as any),
+        venueName: allSpaces.find((s) => s.id === ev.spaceId)?.name || ev.area,
+        address: `${ev.area}, ${ev.city}`,
+        start: ev.start,
+        end: ev.end,
+        organizerId: 'org1' as any,
+        image: ev.image,
+        tags: [ev.category, ev.area],
+        clashTags: [ev.category.toLowerCase(), ev.area.toLowerCase()],
+        vibe: ev.vibe,
+        tiers: ev.tiers,
+        isFree: postingFee.isFree,
+        expectedAttendance: postingFee.totalCapacity || 100,
+      });
+    } catch (e) {
+      console.warn('Convex event sync:', e);
+    }
+
     if (postingFee.isFree) {
       toast(`Free Event submitted! Organiser hosting fee of ${naira(postingFee.postingFee)} (${postingFee.totalCapacity} guests @ ₦2,500/100) billed.`);
     } else {
@@ -344,9 +375,9 @@ function Create({ onDone }: { onDone: () => void }) {
         <div>
           <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Verified Space</label>
           <select aria-label="Venue" className={inputCls} value={f.space} onChange={(e) => set('space', e.target.value)}>
-            {spaces.map((s) => (
+            {allSpaces.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {s.name} ({s.area})
               </option>
             ))}
           </select>
@@ -632,19 +663,21 @@ function Payouts() {
 function OrganizerVerificationPortal() {
   const verifications = useStore((s) => s.verifications);
   const submitForVerification = useStore((s) => s.submitForVerification);
-  const mine = useAllEvents().filter((e) => e.organiserId === 'o1');
+  const allEvents = useAllEvents();
+  const allSpaces = useAllSpaces();
+  const mine = allEvents.filter((e) => e.organiserId === 'org1' || e.organiserId === 'org2' || e.organiserId === 'o1');
   const [selectedEventId, setSelectedEventId] = useState(mine[0]?.id ?? '');
   const [cac, setCac] = useState('RC-1849204');
-  const [director, setDirector] = useState('Babatunde Adeyemi');
+  const [director, setDirector] = useState('Samuel Onuegbu');
   const [nin, setNin] = useState('NIN-8910248192');
   const [phone, setPhone] = useState('+234 803 555 1234');
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(true);
-  const [venueEmail, setVenueEmail] = useState('manager@venue.ng');
-  const [venuePhone, setVenuePhone] = useState('+234 812 345 6789');
+  const [venueEmail, setVenueEmail] = useState('contact@wuseartsgallery.ng');
+  const [venuePhone, setVenuePhone] = useState('+234 809 111 2233');
 
   const selectedEvent = mine.find((e) => e.id === selectedEventId) ?? mine[0];
-  const activeVerifications = verifications.filter((v) => v.organizerId === 'o1');
+  const activeVerifications = verifications.filter((v) => v.organizerId === 'org1' || v.organizerId === 'org2');
 
   // Compute live risk assessment preview
   const liveRisk = calculateRiskAssessment({
@@ -656,10 +689,10 @@ function OrganizerVerificationPortal() {
     startDate: selectedEvent ? selectedEvent.start : new Date().toISOString(),
     hasFlyer: true,
     hasVenueAgreement: true,
-    organizerTrustScore: 4.8,
+    organizerTrustScore: 4.9,
   });
 
-  const handleSubmitVerification = (e: React.FormEvent) => {
+  const handleSubmitVerification = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEvent) return;
 
@@ -674,9 +707,9 @@ function OrganizerVerificationPortal() {
       city: selectedEvent.city,
       area: selectedEvent.area,
       venueId: selectedEvent.spaceId,
-      venueName: spaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
-      organizerId: 'o1',
-      organizerName: 'Afro Nation Collective',
+      venueName: allSpaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
+      organizerId: 'org1',
+      organizerName: 'Eclipse Live Africa',
       organizerIdentity: {
         cacNumber: cac.trim(),
         bvnNinVerified: true,

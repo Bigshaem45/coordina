@@ -4,6 +4,8 @@ import { Button } from '../../design-system/ui';
 import { Logo } from '../../design-system/Logo';
 import { Icon } from '../../design-system/Icon';
 import { useStore } from '../../store';
+import { convex } from '../../lib/convex';
+import { api } from '../../../convex/_generated/api';
 
 export default function Auth() {
   const [params] = useSearchParams();
@@ -21,21 +23,53 @@ export default function Auth() {
   const emailOk = /^\S+@\S+\.\S+$/.test(email);
   const valid = mode === 'forgot' ? emailOk : emailOk && password.length >= 6 && (mode === 'signin' || name.trim().length > 1);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setInfo(null);
     if (mode === 'forgot') return setInfo(`If an account exists for ${email}, a reset link is on its way.`);
     setBusy(true);
-    setTimeout(() => {
+    try {
+      if (mode === 'signup') {
+        await convex.mutation(api.auth.signUp, {
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          role: 'attendee',
+        });
+      } else {
+        await convex.mutation(api.auth.signIn, {
+          email: email.trim().toLowerCase(),
+          name: name.trim() || undefined,
+        });
+      }
       const err = mode === 'signin' ? signIn(email, password) : signUp(name.trim(), email, password);
-      setBusy(false);
       if (err) {
         setError(err);
       } else {
         nav(onboarded ? '/home' : '/onboarding');
       }
-    }, 450);
+    } catch (err: any) {
+      console.warn('Convex auth sync:', err);
+      const localErr = mode === 'signin' ? signIn(email, password) : signUp(name.trim(), email, password);
+      if (localErr) setError(localErr);
+      else nav(onboarded ? '/home' : '/onboarding');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSocial = async (provider: string) => {
+    const providerEmail = `user@${provider.toLowerCase()}.coordina.app`;
+    try {
+      await convex.mutation(api.auth.signIn, {
+        name: `${provider} Guest`,
+        email: providerEmail,
+      });
+    } catch (e) {
+      console.warn('Convex social auth sync:', e);
+    }
+    socialSignIn(provider);
+    nav(onboarded ? '/home' : '/onboarding');
   };
 
   const inputWrap = 'relative flex items-center';
@@ -216,10 +250,7 @@ export default function Auth() {
                     full
                     variant="outline"
                     type="button"
-                    onClick={() => {
-                      socialSignIn('Apple');
-                      nav(onboarded ? '/home' : '/onboarding');
-                    }}
+                    onClick={() => handleSocial('Apple')}
                   >
                     <Icon name="phone_iphone" className="text-base" /> Continue with Apple
                   </Button>
@@ -227,10 +258,7 @@ export default function Auth() {
                       full
                       variant="outline"
                       type="button"
-                      onClick={() => {
-                        socialSignIn('Google');
-                        nav(onboarded ? '/home' : '/onboarding');
-                      }}
+                      onClick={() => handleSocial('Google')}
                     >
                       <Icon name="public" className="text-base text-brand-500" /> Continue with Google
                     </Button>

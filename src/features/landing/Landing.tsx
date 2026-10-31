@@ -4,9 +4,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from '../../design-system/Icon';
 import { Logo } from '../../design-system/Logo';
 import { Badge, BottomSheet, Button, Card } from '../../design-system/ui';
-import { CATEGORIES, CATEGORY_ICON, events, getSpace, minPrice } from '../../data/mock';
+import { CATEGORIES, CATEGORY_ICON, getSpace, minPrice } from '../../data/mock';
 import { fmtDate, fmtTime, naira } from '../../lib/format';
-import { useStore } from '../../store';
+import { useStore, useAllEvents, useAllSpaces } from '../../store';
 import { toast } from '../../lib/fx';
 
 const FEATURES = [
@@ -67,7 +67,9 @@ export default function Landing() {
     toast('SHA-256 Checksum copied to clipboard');
   };
 
-  const featured = events.slice(0, 6);
+  const allEvents = useAllEvents();
+  const allSpaces = useAllSpaces();
+  const featured = allEvents.slice(0, 6);
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[var(--bg)] pb-20 text-[var(--text)] md:pb-0">
@@ -458,7 +460,7 @@ export default function Landing() {
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {featured.map((e) => {
-            const sp = getSpace(e.spaceId);
+            const sp = allSpaces.find((s) => s.id === e.spaceId) ?? getSpace(e.spaceId);
             const d = new Date(e.start);
             const mon = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
             const day = d.getDate();
