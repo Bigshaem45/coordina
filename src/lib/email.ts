@@ -1,5 +1,5 @@
 /**
- * COORDINA Email Service powered by Resend
+ * COORDINA Email Service powered by SendGrid
  * Handles transactional emails: Welcome, Booking Confirmation,
  * Venue Booking Requests, Password Reset, and Verification Updates.
  */
