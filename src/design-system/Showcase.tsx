@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Icon } from './Icon';
 import { Badge, BottomSheet, Button, Card, Chip, Cover, EmptyState, ErrorState, Skeleton, Stars, VerifiedBadge } from './ui';
 import { Logo } from './Logo';
-import { CATEGORY_PHOTO } from '../data/mock';
+import { CATEGORY_PHOTO } from '../lib/constants';
 import type { Category } from '../types';
 
 const swatches = [
@@ -65,7 +65,7 @@ export default function DesignSystem() {
       </Card>
 
       <Card className="p-5">
-        <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Chips & Badges</h2>
+        <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Chips &amp; Badges</h2>
         <div className="flex flex-wrap items-center gap-2.5">
           <Chip active={on} onClick={() => setOn(!on)}>
             Active Filter
@@ -100,7 +100,7 @@ export default function DesignSystem() {
             <span>Tight Transit Window</span>
           </div>
           <p className="mt-1 text-slate-700 dark:text-slate-300">
-            Afrobeats Night ends at 11:00 PM in Victoria Island. Rooftop Brunch starts 10:00 AM in Ikeja. Keep both in itinerary?
+            Schedule clash advisories automatically calculate area-to-area transit times across Abuja and Lagos.
           </p>
         </div>
       </Card>

@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Icon } from '../design-system/Icon';
 import { Button } from '../design-system/ui';
-import { useStore } from '../store';
+import { useStore, useAuth } from '../store';
+import { convex } from '../lib/convex';
+import { api } from '../../convex/_generated/api';
 import { sendEmailVerificationOtpEmail } from '../lib/email';
 import { toast } from '../lib/fx';
 
 export function EmailVerificationModal() {
   const isOpen = useStore((s) => s.verifyModalOpen);
   const setOpen = useStore((s) => s.setVerifyModalOpen);
-  const user = useStore((s) => s.user);
-  const verifyEmail = useStore((s) => s.verifyEmail);
-  const requestEmailVerification = useStore((s) => s.requestEmailVerification);
+  const { user } = useAuth();
 
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,6 @@ export function EmailVerificationModal() {
     return () => clearInterval(t);
   }, [cooldown]);
 
-  // Reset local state when opened
   useEffect(() => {
     if (isOpen) {
       setCode('');
@@ -40,40 +39,52 @@ export function EmailVerificationModal() {
     setBusy(true);
     setError(null);
     try {
-      const vCode = requestEmailVerification(user.email) || '123456';
-      await sendEmailVerificationOtpEmail(user.email, user.name || 'Explorer', vCode);
+      const res = await convex.mutation(api.auth.requestEmailVerification, {
+        userId: user._id as any,
+      });
+      const mailRes = await sendEmailVerificationOtpEmail(res.email, res.name, res.code);
       setCooldown(45);
-      setInfo(`A 6-digit verification code has been dispatched to ${user.email}.`);
-      toast('Verification code sent to your email.');
-    } catch {
-      setInfo(`Verification code dispatched to ${user.email}.`);
+      if (mailRes.success) {
+        setInfo(`A 6-digit verification code has been dispatched to ${res.email}.`);
+        toast('Verification code sent to your email.');
+      } else {
+        setError(
+          mailRes.error ||
+            'Email delivery could not be completed. Ensure SENDGRID_API_KEY is configured in Vercel Environment Variables.'
+        );
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Could not request verification code.');
     } finally {
       setBusy(false);
     }
   };
 
-  const handleVerify = (e: React.FormEvent) => {
+  const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code.trim()) {
-      setError('Please enter the 6-digit verification code.');
+    if (code.trim().length < 6) {
+      setError('Please enter the 6-digit verification code sent to your email.');
       return;
     }
     setBusy(true);
     setError(null);
 
-    const ok = verifyEmail(user.email, code.trim());
-    setBusy(false);
-
-    if (ok) {
-      toast('🎉 Email verified successfully! All restrictions lifted.');
+    try {
+      await convex.mutation(api.auth.verifyEmail, {
+        email: user.email,
+        code: code.trim(),
+      });
+      toast('Email verified! All platform actions are now unlocked.');
       setOpen(false);
-    } else {
-      setError('Invalid code. Please enter the 6-digit code sent to your email.');
+    } catch (err: any) {
+      setError(err?.message || 'Invalid verification code. Please check your inbox and try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
       <div
         className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-midnight-950"
         role="dialog"
@@ -95,21 +106,21 @@ export function EmailVerificationModal() {
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Verify Your Email</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Confirm ownership of <strong className="text-slate-700 dark:text-slate-200">{user.email}</strong>
+              Confirm ownership of{' '}
+              <strong className="text-slate-700 dark:text-slate-200">{user.email}</strong>
             </p>
           </div>
         </div>
 
-        {/* Feature Restriction Warning */}
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
-          <p className="font-semibold flex items-center gap-1.5">
+          <p className="flex items-center gap-1.5 font-semibold">
             <Icon name="lock" className="text-sm" />
             <span>Platform Action Restrictions:</span>
           </p>
           <ul className="mt-1 list-inside list-disc space-y-0.5 text-[11px] text-slate-600 dark:text-slate-300">
-            <li>Ticket purchases & checkout are blocked until verified</li>
-            <li>Organiser event publishing & bank payouts require verification</li>
-            <li>Ticket transfers & squad itinerary voting require verification</li>
+            <li>Ticket purchases &amp; checkout are blocked until verified</li>
+            <li>Event publishing, KYC verification &amp; payouts require verification</li>
+            <li>Ticket transfers, space bookings &amp; squad voting require verification</li>
           </ul>
         </div>
 
@@ -127,7 +138,7 @@ export function EmailVerificationModal() {
 
         <form onSubmit={handleVerify} className="mt-4 space-y-4">
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="mb-1.5 flex items-center justify-between">
               <label htmlFor="otp-input" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 6-Digit Verification PIN
               </label>
@@ -137,7 +148,7 @@ export function EmailVerificationModal() {
                 disabled={busy || cooldown > 0}
                 className="text-xs font-bold text-brand-600 hover:underline disabled:opacity-50 dark:text-brand-400"
               >
-                {cooldown > 0 ? `Resend in ${cooldown}s` : 'Request Code'}
+                {cooldown > 0 ? `Resend in ${cooldown}s` : 'Send Verification Code'}
               </button>
             </div>
             <input
@@ -145,14 +156,14 @@ export function EmailVerificationModal() {
               type="text"
               inputMode="numeric"
               maxLength={6}
-              placeholder="123456"
+              placeholder="••••••"
               autoFocus
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
               className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-center font-mono text-2xl font-bold tracking-[0.3em] text-slate-900 focus:border-brand-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-midnight-900 dark:text-white"
             />
             <p className="mt-1 text-[11px] text-slate-400">
-              Check your inbox for the code, or click <strong>Request Code</strong> above.
+              Click <strong>Send Verification Code</strong> above to dispatch a fresh 6-digit PIN via SendGrid.
             </p>
           </div>
 
@@ -167,10 +178,10 @@ export function EmailVerificationModal() {
             </Button>
             <Button
               type="submit"
-              disabled={busy || code.trim().length < 4}
-              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={busy || code.trim().length < 6}
+              className="flex-1 bg-amber-600 text-white hover:bg-amber-700"
             >
-              <Icon name="verified" /> Verify &amp; Unlock
+              <Icon name="verified" /> {busy ? 'Verifying…' : 'Verify & Unlock'}
             </Button>
           </div>
         </form>
@@ -178,4 +189,3 @@ export function EmailVerificationModal() {
     </div>
   );
 }
-

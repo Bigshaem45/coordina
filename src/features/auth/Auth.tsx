@@ -3,24 +3,34 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../../design-system/ui';
 import { Logo } from '../../design-system/Logo';
 import { Icon } from '../../design-system/Icon';
-import { useStore, type UserRole } from '../../store';
+import { useStore, useAuth, useActiveCity, type UserRole } from '../../store';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
-import { sendWelcomeEmail, sendPasswordResetEmail, sendEmailVerificationOtpEmail } from '../../lib/email';
+import {
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendEmailVerificationOtpEmail,
+} from '../../lib/email';
 import { toast } from '../../lib/fx';
 
 type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset' | 'verify';
+type SignupRole = 'attendee' | 'organiser' | 'venue_manager';
 
 export default function Auth() {
   const [params] = useSearchParams();
   const initialMode = (params.get('mode') as AuthMode) || 'signin';
   const paramEmail = params.get('email') || '';
   const paramCode = params.get('code') || '';
-  const paramRole = (params.get('role') === 'organiser' || params.get('role') === 'organizer') ? 'organiser' : 'attendee';
+  const parseRoleParam = (r: string | null): SignupRole => {
+    if (r === 'organiser' || r === 'organizer') return 'organiser';
+    if (r === 'venue_manager' || r === 'venue') return 'venue_manager';
+    return 'attendee';
+  };
 
   const [mode, setMode] = useState<AuthMode>(initialMode);
-  const [role, setRole] = useState<UserRole>(paramRole);
+  const [role, setRole] = useState<SignupRole>(() => parseRoleParam(params.get('role')));
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState(paramEmail);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,26 +42,23 @@ export default function Auth() {
   const [busy, setBusy] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
-  const {
-    user,
-    onboarded,
-    signIn,
-    signUp,
-    signOut,
-    verifyEmail,
-    requestEmailVerification,
-    requestPasswordReset,
-    resetPassword,
-  } = useStore();
+  const { user } = useAuth();
+  const activeCity = useActiveCity();
+  const setSessionUserId = useStore((s) => s.setSessionUserId);
+  const signOut = useStore((s) => s.signOut);
   const nav = useNavigate();
 
-  const navigateAfterAuth = (activeRole?: UserRole) => {
+  const navigateAfterAuth = (activeRole: UserRole, onboarded?: boolean) => {
     if (redirectUrl) {
       nav(redirectUrl);
       return;
     }
-    if (activeRole === 'organiser') {
+    if (activeRole === 'admin') {
+      nav('/admin');
+    } else if (activeRole === 'organiser') {
       nav('/organiser');
+    } else if (activeRole === 'venue_manager') {
+      nav('/venue-portal');
     } else {
       nav(onboarded ? '/home' : '/onboarding');
     }
@@ -61,11 +68,7 @@ export default function Auth() {
     if (paramEmail && !email) setEmail(paramEmail);
     if (paramCode && !verificationCode) setVerificationCode(paramCode);
     if (params.get('mode')) setMode(params.get('mode') as AuthMode);
-    if (params.get('role')) {
-      const r = params.get('role');
-      if (r === 'organiser' || r === 'organizer') setRole('organiser');
-      else setRole('attendee');
-    }
+    if (params.get('role')) setRole(parseRoleParam(params.get('role')));
   }, [params]);
 
   useEffect(() => {
@@ -78,10 +81,16 @@ export default function Auth() {
 
   const isFormValid = () => {
     if (mode === 'forgot') return emailOk;
-    if (mode === 'verify') return emailOk && verificationCode.trim().length >= 4;
-    if (mode === 'reset') return emailOk && verificationCode.trim().length >= 4 && password.length >= 6 && password === confirmPassword;
+    if (mode === 'verify') return emailOk && verificationCode.trim().length >= 6;
+    if (mode === 'reset')
+      return (
+        emailOk &&
+        verificationCode.trim().length >= 6 &&
+        password.length >= 6 &&
+        password === confirmPassword
+      );
     if (mode === 'signin') return emailOk && password.length >= 6;
-    if (mode === 'signup') return emailOk && password.length >= 6 && name.trim().length > 1;
+    if (mode === 'signup') return emailOk && password.length >= 6 && name.trim().length >= 2;
     return false;
   };
 
@@ -90,13 +99,19 @@ export default function Auth() {
     setBusy(true);
     setError(null);
     try {
-      const code = requestEmailVerification(email) || '123456';
-      await sendEmailVerificationOtpEmail(email.trim().toLowerCase(), name.trim() || 'Explorer', code);
+      const res = await convex.mutation(api.auth.requestEmailVerification, {
+        email: email.trim().toLowerCase(),
+      });
+      const mailRes = await sendEmailVerificationOtpEmail(res.email, res.name, res.code);
       setResendCooldown(45);
-      setInfo(`New 6-digit verification code sent to ${email}.`);
-      toast('Verification code sent to your email.');
-    } catch {
-      setInfo('Verification email dispatched to your inbox.');
+      if (mailRes.success) {
+        setInfo(`A fresh 6-digit verification code was sent to ${res.email}.`);
+        toast('Verification code sent to your email.');
+      } else {
+        setError(mailRes.error || 'Could not deliver email. Verify SENDGRID_API_KEY in Vercel.');
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to generate verification code.');
     } finally {
       setBusy(false);
     }
@@ -108,126 +123,102 @@ export default function Auth() {
     setInfo(null);
     const cleanEmail = email.trim().toLowerCase();
 
-    // 1. FORGOT PASSWORD MODE
     if (mode === 'forgot') {
       setBusy(true);
       try {
-        const resetRes = requestPasswordReset(cleanEmail);
-        const code = resetRes.code || '123456';
-        await sendPasswordResetEmail(cleanEmail, '', code);
-        setInfo(`Password reset code has been sent to ${cleanEmail}. Enter the code below to set your new password.`);
+        const resetRes = await convex.mutation(api.auth.requestPasswordReset, {
+          email: cleanEmail,
+        });
+        await sendPasswordResetEmail(resetRes.email, resetRes.name, resetRes.code);
+        setInfo(
+          `A 6-digit password reset code has been sent to ${cleanEmail}. Enter it below with your new password.`
+        );
         setMode('reset');
       } catch (err: any) {
-        setError(err?.message || 'Could not send reset code. Please try again.');
+        setError(err?.message || 'Could not request password reset.');
       } finally {
         setBusy(false);
       }
       return;
     }
 
-    // 2. PASSWORD RESET SUBMISSION MODE
     if (mode === 'reset') {
       if (password !== confirmPassword) {
-        setError('Passwords do not match. Please re-enter.');
+        setError('Passwords do not match.');
         return;
       }
       setBusy(true);
       try {
-        const ok = resetPassword(cleanEmail, verificationCode.trim(), password);
-        if (!ok) {
-          setError('Invalid or expired reset code. Please check your email or request a new code.');
-          return;
-        }
-        toast('Password reset successfully! You can now sign in.');
-        setInfo('Your password has been updated. Please sign in with your new password.');
-        setPassword('');
-        setConfirmPassword('');
-        setMode('signin');
+        const res = await convex.mutation(api.auth.resetPassword, {
+          email: cleanEmail,
+          code: verificationCode.trim(),
+          newPassword: password,
+        });
+        setSessionUserId(String(res.userId));
+        toast('Password updated! You are now signed in.');
+        navigateAfterAuth(res.role as UserRole, true);
       } catch (err: any) {
-        setError(err?.message || 'Failed to reset password.');
+        setError(err?.message || 'Invalid or expired reset code.');
       } finally {
         setBusy(false);
       }
       return;
     }
 
-    // 3. EMAIL VERIFICATION MODE
     if (mode === 'verify') {
       setBusy(true);
       try {
-        const ok = verifyEmail(cleanEmail, verificationCode.trim());
-        if (!ok) {
-          setError('Invalid verification code. Enter the 6-digit code sent to your inbox.');
-          return;
-        }
-        toast('Email verified successfully! Welcome to COORDINA.');
-        const activeUser = useStore.getState().user;
-        navigateAfterAuth(activeUser?.role);
+        const res = await convex.mutation(api.auth.verifyEmail, {
+          email: cleanEmail,
+          code: verificationCode.trim(),
+        });
+        setSessionUserId(String(res.userId));
+        toast('Email verified! Welcome to COORDINA.');
+        navigateAfterAuth(res.role as UserRole, res.onboarded);
       } catch (err: any) {
-        setError(err?.message || 'Verification failed. Please try again.');
+        setError(err?.message || 'Invalid verification code.');
       } finally {
         setBusy(false);
       }
       return;
     }
 
-    // 4. SIGN UP & SIGN IN MODES
     setBusy(true);
     try {
       if (mode === 'signup') {
-        const vCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const res = await convex.mutation(api.auth.signUp, {
+          name: name.trim(),
+          email: cleanEmail,
+          password,
+          phone: phone.trim() || undefined,
+          role,
+          city: activeCity,
+        });
 
-        try {
-          await convex.mutation(api.auth.signUp, {
-            name: name.trim(),
-            email: cleanEmail,
-            role,
-          });
-        } catch (cErr) {
-          console.warn('Convex auth signup fallback:', cErr);
-        }
+        setSessionUserId(String(res.userId));
 
-        const localErr = signUp(name.trim(), cleanEmail, password, role);
-        if (localErr) {
-          setError(localErr);
-          return;
-        }
+        sendWelcomeEmail(res.email, res.name);
+        await sendEmailVerificationOtpEmail(res.email, res.name, res.verificationCode);
 
-        // Send Welcome and Email Verification OTPs
-        sendWelcomeEmail(cleanEmail, name.trim());
-        sendEmailVerificationOtpEmail(cleanEmail, name.trim(), vCode);
-
-        toast('Account created! A verification code was sent to your email.');
-        setInfo(`We've sent a 6-digit verification code to ${cleanEmail}. Enter it below to activate your account.`);
+        toast('Account created! Check your email for your 6-digit verification PIN.');
+        setInfo(
+          `We sent a 6-digit verification code to ${cleanEmail}. Verify now to unlock ticket purchases, squad voting, and event publishing.`
+        );
         setMode('verify');
         return;
       }
 
       // SIGN IN
-      try {
-        await convex.mutation(api.auth.signIn, {
-          email: cleanEmail,
-          name: name.trim() || undefined,
-        });
-      } catch (cErr) {
-        console.warn('Convex auth signin fallback:', cErr);
-      }
+      const res = await convex.mutation(api.auth.signIn, {
+        email: cleanEmail,
+        password,
+      });
 
-      const err = signIn(cleanEmail, password);
-      if (err) {
-        setError(err);
-      } else {
-        const activeUser = useStore.getState().user;
-        navigateAfterAuth(activeUser?.role);
-      }
+      setSessionUserId(String(res.userId));
+      toast(`Welcome back, ${res.name}!`);
+      navigateAfterAuth(res.role as UserRole, res.onboarded);
     } catch (err: any) {
-      console.warn('Auth processing error:', err);
-      const localErr = mode === 'signin' ? signIn(cleanEmail, password) : signUp(name.trim(), cleanEmail, password, role);
-      if (localErr) setError(localErr);
-      else {
-        const activeUser = useStore.getState().user;
-        navigateAfterAuth(activeUser?.role);
-      }
+      setError(err?.message || 'Authentication failed. Check your credentials and try again.');
     } finally {
       setBusy(false);
     }
@@ -236,6 +227,13 @@ export default function Auth() {
   const inputWrap = 'relative flex items-center';
   const inputCls =
     'h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100';
+
+  const roleLabel = (r: string) => {
+    if (r === 'organiser') return 'Event Planner';
+    if (r === 'venue_manager') return 'Venue Manager';
+    if (r === 'admin') return 'Compliance Admin';
+    return 'Attendee';
+  };
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[var(--bg)] text-[var(--text)] md:grid md:grid-cols-12">
@@ -273,40 +271,40 @@ export default function Auth() {
             <Link to="/" aria-label="COORDINA home">
               <Logo size={30} />
             </Link>
-            <Link to="/" className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400">
-              Back
+            <Link to="/home" className="text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-slate-400">
+              Explore Feed
             </Link>
           </div>
 
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {mode === 'signin' && 'Hey! Welcome back'}
+            {mode === 'signin' && 'Welcome back'}
             {mode === 'signup' && 'Create your account'}
             {mode === 'forgot' && 'Reset your password'}
             {mode === 'reset' && 'Create new password'}
             {mode === 'verify' && 'Verify your email'}
           </h1>
           <p className="muted mt-1 text-sm">
-            {mode === 'signin' && 'Sign in to access your offline ticket passes and itinerary.'}
-            {mode === 'signup' && 'Choose your role and join COORDINA.'}
+            {mode === 'signin' && 'Sign in to access your offline passes, plan cart, and role workspace.'}
+            {mode === 'signup' && 'Choose your role to map your workspace and permissions.'}
             {mode === 'forgot' && 'Enter your account email to receive a 6-digit recovery code.'}
-            {mode === 'reset' && 'Enter the 6-digit code from your email and your new password.'}
-            {mode === 'verify' && `We sent a 6-digit verification code to ${email || 'your inbox'}.`}
+            {mode === 'reset' && 'Enter the 6-digit code sent to your inbox and your new password.'}
+            {mode === 'verify' && `Enter the 6-digit PIN dispatched to ${email || 'your email'}.`}
           </p>
 
           {user && (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-brand-200 bg-brand-50/80 p-3.5 text-xs dark:border-brand-900/60 dark:bg-brand-950/40">
               <div className="min-w-0">
-                <p className="font-semibold text-brand-950 dark:text-brand-200 flex items-center gap-1.5">
+                <p className="flex items-center gap-1.5 font-semibold text-brand-950 dark:text-brand-200">
                   <span>{user.name}</span>
-                  <span className="rounded bg-brand-200/80 px-1.5 py-0.2 text-[10px] font-bold uppercase text-brand-800 dark:bg-brand-900 dark:text-brand-300">
-                    {user.role === 'organiser' ? 'Organizer' : 'Attendee'}
+                  <span className="rounded bg-brand-200/80 px-1.5 py-0.5 text-[10px] font-bold uppercase text-brand-800 dark:bg-brand-900 dark:text-brand-300">
+                    {roleLabel(user.role)}
                   </span>
                   {user.emailVerified ? (
-                    <span className="rounded bg-emerald-100 px-1.5 py-0.2 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                       ✓ Verified
                     </span>
                   ) : (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[10px] font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
                       Unverified
                     </span>
                   )}
@@ -314,9 +312,9 @@ export default function Auth() {
                 <p className="muted truncate">{user.email}</p>
               </div>
               <div className="flex items-center gap-2">
-                <Link to={user.role === 'organiser' ? '/organiser' : '/home'}>
-                  <Button size="sm">{user.role === 'organiser' ? 'Studio' : 'Go to App'}</Button>
-                </Link>
+                <Button size="sm" onClick={() => navigateAfterAuth(user.role, user.onboarded)}>
+                  Continue
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => signOut()}>
                   Sign out
                 </Button>
@@ -325,85 +323,106 @@ export default function Auth() {
           )}
 
           <form onSubmit={submit} className="mt-6 space-y-3.5" noValidate>
-            {/* ACCOUNT ROLE PROMPT (SIGNUP ONLY) */}
             {mode === 'signup' && (
               <div>
                 <label className="mb-2 block text-xs font-medium text-slate-700 dark:text-slate-300">
                   Select Account Role
                 </label>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setRole('attendee')}
-                    className={`flex flex-col items-start rounded-2xl border p-3 text-left transition-all ${
-                      role === 'attendee'
-                        ? 'border-brand-500 bg-brand-50/80 shadow-xs ring-2 ring-brand-500/20 dark:border-brand-500 dark:bg-brand-500/10'
-                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-midnight-800'
-                    }`}
-                  >
-                    <div
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-                        role === 'attendee'
-                          ? 'bg-brand-500 text-white'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    {
+                      id: 'attendee' as const,
+                      icon: 'person',
+                      title: 'Attendee',
+                      desc: 'Plan nights, vote & buy passes',
+                    },
+                    {
+                      id: 'organiser' as const,
+                      icon: 'business',
+                      title: 'Planner',
+                      desc: 'Host events, KYC & payouts',
+                    },
+                    {
+                      id: 'venue_manager' as const,
+                      icon: 'storefront',
+                      title: 'Venue',
+                      desc: 'Confirm bookings & tables',
+                    },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setRole(opt.id)}
+                      className={`flex flex-col items-start rounded-2xl border p-2.5 text-left transition-all ${
+                        role === opt.id
+                          ? 'border-brand-500 bg-brand-50/80 shadow-xs ring-2 ring-brand-500/20 dark:border-brand-500 dark:bg-brand-500/10'
+                          : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-midnight-800'
                       }`}
                     >
-                      <Icon name="person" className="text-base" />
-                    </div>
-                    <p className="mt-2 text-xs font-bold text-slate-900 dark:text-white">Attendee</p>
-                    <p className="mt-0.5 text-[10px] leading-tight text-slate-500 dark:text-slate-400">
-                      Explore events, join squads &amp; buy passes.
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRole('organiser')}
-                    className={`flex flex-col items-start rounded-2xl border p-3 text-left transition-all ${
-                      role === 'organiser'
-                        ? 'border-brand-500 bg-brand-50/80 shadow-xs ring-2 ring-brand-500/20 dark:border-brand-500 dark:bg-brand-500/10'
-                        : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-midnight-800'
-                    }`}
-                  >
-                    <div
-                      className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-                        role === 'organiser'
-                          ? 'bg-brand-500 text-white'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-                      }`}
-                    >
-                      <Icon name="business" className="text-base" />
-                    </div>
-                    <p className="mt-2 text-xs font-bold text-slate-900 dark:text-white">Event Planner</p>
-                    <p className="mt-0.5 text-[10px] leading-tight text-slate-500 dark:text-slate-400">
-                      Publish events, verify spaces &amp; get payouts.
-                    </p>
-                  </button>
+                      <div
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                          role === opt.id
+                            ? 'bg-brand-500 text-white'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                        }`}
+                      >
+                        <Icon name={opt.icon} className="text-base" />
+                      </div>
+                      <p className="mt-2 text-xs font-bold text-slate-900 dark:text-white">{opt.title}</p>
+                      <p className="mt-0.5 text-[10px] leading-tight text-slate-500 dark:text-slate-400">
+                        {opt.desc}
+                      </p>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* FULL NAME (SIGNUP ONLY) */}
             {mode === 'signup' && (
-              <div>
-                <label htmlFor="name" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Full name
-                </label>
-                <div className={inputWrap}>
-                  <Icon name="person" className="pointer-events-none absolute left-3.5 text-slate-400" />
-                  <input
-                    id="name"
-                    autoComplete="name"
-                    className={inputCls}
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Ada Okafor"
-                  />
+              <>
+                <div>
+                  <label htmlFor="name" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {role === 'organiser'
+                      ? 'Organizer / Brand Name'
+                      : role === 'venue_manager'
+                      ? 'Manager / Venue Name'
+                      : 'Full Name'}
+                  </label>
+                  <div className={inputWrap}>
+                    <Icon name="person" className="pointer-events-none absolute left-3.5 text-slate-400" />
+                    <input
+                      id="name"
+                      autoComplete="name"
+                      className={inputCls}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder={
+                        role === 'organiser' ? 'Your event company or full name' : 'Enter your full name'
+                      }
+                    />
+                  </div>
                 </div>
-              </div>
+
+                <div>
+                  <label htmlFor="phone" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Phone Number (Optional)
+                  </label>
+                  <div className={inputWrap}>
+                    <Icon name="call" className="pointer-events-none absolute left-3.5 text-slate-400" />
+                    <input
+                      id="phone"
+                      type="tel"
+                      autoComplete="tel"
+                      className={inputCls}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+234 800 000 0000"
+                    />
+                  </div>
+                </div>
+              </>
             )}
 
-            {/* EMAIL ADDRESS */}
             {mode !== 'verify' && (
               <div>
                 <label htmlFor="email" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -418,14 +437,13 @@ export default function Auth() {
                     className={inputCls}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="hello@coordina.ng"
+                    placeholder="you@domain.com"
                     disabled={mode === 'reset'}
                   />
                 </div>
               </div>
             )}
 
-            {/* 6-DIGIT CODE INPUT FOR VERIFY OR RESET */}
             {(mode === 'verify' || mode === 'reset') && (
               <div>
                 <label htmlFor="code" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -436,17 +454,17 @@ export default function Auth() {
                   <input
                     id="code"
                     type="text"
-                    maxLength={8}
-                    className={`${inputCls} font-mono tracking-widest text-base font-bold`}
+                    inputMode="numeric"
+                    maxLength={6}
+                    className={`${inputCls} font-mono text-base font-bold tracking-widest`}
                     value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value)}
-                    placeholder="123456"
+                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••••"
                   />
                 </div>
               </div>
             )}
 
-            {/* PASSWORD INPUT (SIGNIN, SIGNUP, RESET) */}
             {mode !== 'forgot' && mode !== 'verify' && (
               <div>
                 <div className="mb-1.5 flex items-center justify-between">
@@ -490,7 +508,6 @@ export default function Auth() {
               </div>
             )}
 
-            {/* CONFIRM PASSWORD (RESET MODE ONLY) */}
             {mode === 'reset' && (
               <div>
                 <label htmlFor="confirmPw" className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
@@ -510,39 +527,41 @@ export default function Auth() {
               </div>
             )}
 
-            {/* ERROR & INFO NOTICES */}
             {error && (
-              <p role="alert" className="rounded-xl border border-coral-400/30 bg-coral-50 p-3 text-xs font-medium text-coral-600 dark:bg-coral-500/10 dark:text-coral-400">
+              <p
+                role="alert"
+                className="rounded-xl border border-coral-400/30 bg-coral-50 p-3 text-xs font-medium text-coral-600 dark:bg-coral-500/10 dark:text-coral-400"
+              >
                 {error}
               </p>
             )}
             {info && (
-              <p role="status" className="rounded-xl border border-brand-400/30 bg-brand-50 p-3 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+              <p
+                role="status"
+                className="rounded-xl border border-brand-400/30 bg-brand-50 p-3 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+              >
                 {info}
               </p>
             )}
 
             <Button full size="lg" type="submit" disabled={!isFormValid() || busy} className="mt-2">
-              {busy ? (
-                'Processing…'
-              ) : mode === 'signin' ? (
-                'Sign In'
-              ) : mode === 'signup' ? (
-                `Create Account as ${role === 'organiser' ? 'Organizer' : 'Attendee'}`
-              ) : mode === 'forgot' ? (
-                'Send Password Reset Code'
-              ) : mode === 'reset' ? (
-                'Update Password'
-              ) : (
-                'Verify Email & Activate Account'
-              )}
+              {busy
+                ? 'Processing…'
+                : mode === 'signin'
+                ? 'Sign In'
+                : mode === 'signup'
+                ? `Create ${roleLabel(role)} Account`
+                : mode === 'forgot'
+                ? 'Send Password Reset Code'
+                : mode === 'reset'
+                ? 'Update Password'
+                : 'Verify Email & Activate Account'}
             </Button>
           </form>
 
-          {/* VERIFY MODE RESEND BUTTON */}
           {mode === 'verify' && (
             <div className="mt-4 flex items-center justify-between text-xs">
-              <span className="text-slate-500 dark:text-slate-400">Didn't receive the code?</span>
+              <span className="text-slate-500 dark:text-slate-400">Didn&apos;t receive the code?</span>
               <button
                 type="button"
                 onClick={handleResendVerification}
@@ -554,7 +573,6 @@ export default function Auth() {
             </div>
           )}
 
-          {/* FOOTER SWITCHERS */}
           <div className="mt-6 text-center text-sm text-slate-600 dark:text-slate-300">
             {mode === 'signin' && (
               <p>
@@ -594,7 +612,7 @@ export default function Auth() {
               <p>
                 <button
                   type="button"
-                  className="font-semibold text-brand-500 hover:underline flex items-center justify-center gap-1 mx-auto"
+                  className="mx-auto flex items-center justify-center gap-1 font-semibold text-brand-500 hover:underline"
                   onClick={() => {
                     setMode('signin');
                     setError(null);

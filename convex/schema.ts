@@ -1,6 +1,17 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
+export const verificationStatusValidator = v.union(
+  v.literal('Unverified'),
+  v.literal('Verification Pending'),
+  v.literal('Venue Confirmed'),
+  v.literal('Event Verified'),
+  v.literal('Organizer Verified'),
+  v.literal('Coordina Trusted'),
+  v.literal('Verification Rejected'),
+  v.literal('Event Suspended')
+);
+
 export default defineSchema({
   // 1. Users (Attendees, Organizers, Venue Managers, Admins)
   users: defineTable({
@@ -19,6 +30,14 @@ export default defineSchema({
     vibe: v.optional(v.string()),
     budget: v.optional(v.number()),
     phoneVerified: v.boolean(),
+    passwordHash: v.optional(v.string()),
+    passwordSalt: v.optional(v.string()),
+    emailVerified: v.optional(v.boolean()),
+    emailVerificationCode: v.optional(v.string()),
+    emailVerificationSentAt: v.optional(v.number()),
+    resetCode: v.optional(v.string()),
+    resetCodeSentAt: v.optional(v.number()),
+    onboarded: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     .index('by_email', ['email'])
@@ -30,6 +49,8 @@ export default defineSchema({
     userId: v.id('users'),
     businessName: v.string(),
     cacNumber: v.optional(v.string()),
+    directorName: v.optional(v.string()),
+    nin: v.optional(v.string()),
     contactEmail: v.string(),
     contactPhone: v.string(),
     website: v.optional(v.string()),
@@ -40,13 +61,19 @@ export default defineSchema({
       v.literal('rejected'),
       v.literal('restricted')
     ),
-    riskScore: v.number(), // 0 (lowest risk) to 100 (highest risk)
+    riskScore: v.number(),
     tier: v.union(v.literal('basic'), v.literal('verified_pro'), v.literal('enterprise')),
+    faceBiometricVerified: v.optional(v.boolean()),
+    faceSnapshotUrl: v.optional(v.string()),
+    biometricToken: v.optional(v.string()),
+    biometricConfidence: v.optional(v.number()),
     bankDetails: v.optional(
       v.object({
         bankName: v.string(),
+        bankCode: v.optional(v.string()),
         accountName: v.string(),
         accountNumber: v.string(),
+        recipientCode: v.optional(v.string()),
       })
     ),
     createdAt: v.number(),
@@ -76,7 +103,7 @@ export default defineSchema({
   // 4. Social Spaces & Venues
   spaces: defineTable({
     name: v.string(),
-    type: v.string(), // Lounge, Club, Rooftop, Gallery, Beach Club, Outdoor, Arena
+    type: v.string(),
     city: v.string(),
     area: v.string(),
     address: v.string(),
@@ -93,24 +120,34 @@ export default defineSchema({
     contactEmail: v.optional(v.string()),
     managerUserId: v.optional(v.id('users')),
     image: v.string(),
+    photos: v.optional(v.array(v.string())),
+    hours: v.optional(v.string()),
+    about: v.optional(v.string()),
+    safety: v.optional(v.string()),
+    bookingFrom: v.optional(v.number()),
+    dressCode: v.optional(v.string()),
+    bestFor: v.optional(v.array(v.string())),
     coverStorageId: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index('by_city', ['city'])
     .index('by_verified', ['verified'])
-    .index('by_area', ['area']),
+    .index('by_area', ['area'])
+    .index('by_managerUserId', ['managerUserId']),
 
   // 5. Events
   events: defineTable({
     title: v.string(),
     description: v.string(),
-    category: v.string(), // Concerts, Nightlife, Food, Arts, Tech, Faith, Sports
+    category: v.string(),
     city: v.string(),
     area: v.string(),
     spaceId: v.optional(v.id('spaces')),
     venueName: v.string(),
     address: v.string(),
-    start: v.string(), // ISO string e.g. 2026-10-30T18:00:00Z
+    lat: v.optional(v.number()),
+    lng: v.optional(v.number()),
+    start: v.string(),
     end: v.string(),
     organizerId: v.id('organizers'),
     image: v.string(),
@@ -124,12 +161,7 @@ export default defineSchema({
       v.literal('published'),
       v.literal('cancelled')
     ),
-    verificationStatus: v.union(
-      v.literal('Unverified'),
-      v.literal('Event Verified'),
-      v.literal('Organizer Verified'),
-      v.literal('Coordina Trusted')
-    ),
+    verificationStatus: verificationStatusValidator,
     tiers: v.array(
       v.object({
         id: v.string(),
@@ -157,25 +189,48 @@ export default defineSchema({
   event_verifications: defineTable({
     eventId: v.id('events'),
     organizerId: v.id('organizers'),
+    cacNumber: v.optional(v.string()),
+    directorName: v.optional(v.string()),
+    nin: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    phoneOtpVerified: v.optional(v.boolean()),
+    faceBiometricVerified: v.optional(v.boolean()),
+    faceSnapshotUrl: v.optional(v.string()),
+    biometricToken: v.optional(v.string()),
+    biometricConfidence: v.optional(v.number()),
+    venueName: v.optional(v.string()),
+    venueEmail: v.optional(v.string()),
+    venuePhone: v.optional(v.string()),
+    venueToken: v.optional(v.string()),
+    venueConfirmedAt: v.optional(v.string()),
+    riskScore: v.optional(v.number()),
+    riskLevel: v.optional(v.union(v.literal('Low'), v.literal('Medium'), v.literal('High'))),
+    riskReasons: v.optional(v.array(v.string())),
+    documents: v.optional(
+      v.array(
+        v.object({
+          id: v.string(),
+          name: v.string(),
+          type: v.string(),
+          url: v.string(),
+          uploadedAt: v.string(),
+          verified: v.boolean(),
+        })
+      )
+    ),
     flyerStorageId: v.optional(v.string()),
     programmeStorageId: v.optional(v.string()),
     bookingReceiptStorageId: v.optional(v.string()),
     performerConfirmationStorageId: v.optional(v.string()),
     status: v.union(v.literal('pending'), v.literal('approved'), v.literal('rejected')),
-    trustLevelAssigned: v.optional(
-      v.union(
-        v.literal('Unverified'),
-        v.literal('Event Verified'),
-        v.literal('Organizer Verified'),
-        v.literal('Coordina Trusted')
-      )
-    ),
+    trustLevelAssigned: v.optional(verificationStatusValidator),
     reviewerNotes: v.optional(v.string()),
     reviewedBy: v.optional(v.id('users')),
     reviewedAt: v.optional(v.number()),
     submittedAt: v.number(),
   })
     .index('by_eventId', ['eventId'])
+    .index('by_organizerId', ['organizerId'])
     .index('by_status', ['status']),
 
   // 7. Venue Confirmation Requests (for remote physical confirmation)
@@ -183,8 +238,12 @@ export default defineSchema({
     eventId: v.id('events'),
     spaceId: v.optional(v.id('spaces')),
     venueName: v.string(),
-    token: v.string(), // Cryptographic token e.g. "tok_afro_2026"
+    token: v.string(),
     contactPhone: v.string(),
+    contactEmail: v.optional(v.string()),
+    organizerName: v.optional(v.string()),
+    cacNumber: v.optional(v.string()),
+    phoneOtpCode: v.optional(v.string()),
     status: v.union(v.literal('pending'), v.literal('confirmed'), v.literal('disputed')),
     notes: v.optional(v.string()),
     confirmedAt: v.optional(v.number()),
@@ -197,7 +256,7 @@ export default defineSchema({
 
   // 8. Orders & Payments
   orders: defineTable({
-    orderId: v.string(), // e.g. "ORD-2026-XXXX"
+    orderId: v.string(),
     userId: v.optional(v.id('users')),
     customerName: v.string(),
     customerEmail: v.string(),
@@ -213,9 +272,11 @@ export default defineSchema({
       })
     ),
     subtotal: v.number(),
+    promoCode: v.optional(v.string()),
+    discountAmount: v.optional(v.number()),
     fees: v.object({
       platformFee: v.number(),
-      freeEventOrgFee: v.number(), // ₦2500 per 100 capacity for free events
+      freeEventOrgFee: v.number(),
       gatewayFee: v.number(),
       total: v.number(),
     }),
@@ -232,24 +293,32 @@ export default defineSchema({
 
   // 9. Issued Tickets (with QR payload & offline cryptographic verification)
   tickets: defineTable({
-    ticketCode: v.string(), // e.g. "CD-9482-TX"
+    ticketCode: v.string(),
     orderId: v.id('orders'),
     eventId: v.id('events'),
     userId: v.optional(v.id('users')),
     attendeeName: v.string(),
     attendeeEmail: v.string(),
+    tierId: v.optional(v.string()),
     tierName: v.string(),
     price: v.number(),
-    qrHash: v.string(), // Cryptographic signature for offline gate validation
+    qrHash: v.string(),
     status: v.union(v.literal('valid'), v.literal('used'), v.literal('cancelled')),
     checkedInAt: v.optional(v.number()),
     checkedInBy: v.optional(v.string()),
+    transferredToEmail: v.optional(v.string()),
+    transferredToName: v.optional(v.string()),
+    transferredFromUserId: v.optional(v.id('users')),
+    transferredAt: v.optional(v.number()),
+    refundRequested: v.optional(v.boolean()),
+    refundRequestedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_ticketCode', ['ticketCode'])
     .index('by_orderId', ['orderId'])
     .index('by_eventId', ['eventId'])
     .index('by_userId', ['userId'])
+    .index('by_transferredFromUserId', ['transferredFromUserId'])
     .index('by_status', ['status']),
 
   // 10. Squads (Social Itinerary & Split Voting)
@@ -261,10 +330,13 @@ export default defineSchema({
     creatorName: v.string(),
     members: v.array(
       v.object({
+        userId: v.optional(v.id('users')),
+        email: v.optional(v.string()),
         name: v.string(),
         phone: v.optional(v.string()),
         avatar: v.string(),
         isHost: v.boolean(),
+        arrivalStatus: v.optional(v.string()),
         joinedAt: v.number(),
       })
     ),
@@ -279,6 +351,7 @@ export default defineSchema({
   squad_votes: defineTable({
     squadId: v.id('squads'),
     eventId: v.id('events'),
+    voterUserId: v.optional(v.id('users')),
     voterName: v.string(),
     vote: v.union(v.literal('up'), v.literal('down')),
     timestamp: v.number(),
@@ -286,7 +359,16 @@ export default defineSchema({
     .index('by_squadId', ['squadId'])
     .index('by_squad_and_event', ['squadId', 'eventId']),
 
-  // 12. Verification Documents & General File Metadata
+  // 12. Squad Messages
+  squad_messages: defineTable({
+    squadId: v.id('squads'),
+    senderUserId: v.id('users'),
+    senderName: v.string(),
+    text: v.string(),
+    createdAt: v.number(),
+  }).index('by_squadId', ['squadId']),
+
+  // 13. Verification Documents & General File Metadata
   documents: defineTable({
     storageId: v.string(),
     name: v.string(),
@@ -307,13 +389,13 @@ export default defineSchema({
     .index('by_storageId', ['storageId'])
     .index('by_category', ['category']),
 
-  // 13. Audit & Compliance Logs (Immutable)
+  // 14. Audit & Compliance Logs (Immutable)
   audit_logs: defineTable({
     actorName: v.string(),
     actorRole: v.string(),
     actorId: v.optional(v.string()),
-    action: v.string(), // e.g. "APPROVE_ORGANIZER", "SET_EVENT_TRUST", "CHECK_IN_TICKET"
-    targetEntity: v.string(), // e.g. "events", "organizers", "tickets"
+    action: v.string(),
+    targetEntity: v.string(),
     targetId: v.string(),
     details: v.string(),
     timestamp: v.number(),
@@ -321,7 +403,7 @@ export default defineSchema({
     .index('by_targetEntity', ['targetEntity'])
     .index('by_timestamp', ['timestamp']),
 
-  // 14. Notifications
+  // 15. Notifications
   notifications: defineTable({
     userId: v.id('users'),
     title: v.string(),
@@ -340,7 +422,7 @@ export default defineSchema({
     .index('by_userId', ['userId'])
     .index('by_read', ['read']),
 
-  // 15. Community Reports & Fraud Alerts
+  // 16. Community Reports & Fraud Alerts
   event_reports: defineTable({
     eventId: v.id('events'),
     eventTitle: v.string(),
@@ -369,12 +451,12 @@ export default defineSchema({
     .index('by_eventId', ['eventId'])
     .index('by_status', ['status']),
 
-  // 16. Event Ratings & Attendee Reviews
+  // 17. Event Ratings & Attendee Reviews
   event_ratings: defineTable({
     eventId: v.id('events'),
     userId: v.optional(v.id('users')),
     userName: v.string(),
-    rating: v.number(), // 1 to 5 stars
+    rating: v.number(),
     tags: v.array(v.string()),
     review: v.optional(v.string()),
     ticketVerified: v.boolean(),
@@ -383,7 +465,7 @@ export default defineSchema({
     .index('by_eventId', ['eventId'])
     .index('by_rating', ['rating']),
 
-  // 17. Blacklisted & Flagged Identities (Fraud & Rogue Organizer Blacklist)
+  // 18. Blacklisted & Flagged Identities
   blacklisted_identities: defineTable({
     organizerName: v.string(),
     email: v.string(),
@@ -401,5 +483,69 @@ export default defineSchema({
     .index('by_phone', ['phone'])
     .index('by_nin', ['nin'])
     .index('by_status', ['status']),
-});
 
+  // 19. Per-User Plan Cart Items
+  cart_items: defineTable({
+    userId: v.id('users'),
+    eventId: v.id('events'),
+    tierId: v.string(),
+    qty: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_user_and_event', ['userId', 'eventId']),
+
+  // 20. Per-User Social Space Reservations
+  space_bookings: defineTable({
+    userId: v.id('users'),
+    userName: v.string(),
+    userEmail: v.string(),
+    spaceId: v.id('spaces'),
+    spaceName: v.string(),
+    date: v.string(),
+    guests: v.number(),
+    estimatedSpend: v.number(),
+    status: v.union(v.literal('Requested'), v.literal('Confirmed'), v.literal('Declined')),
+    createdAt: v.number(),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_spaceId', ['spaceId']),
+
+  // 21. Organizer Promo Codes
+  promo_codes: defineTable({
+    organizerId: v.id('organizers'),
+    eventId: v.optional(v.id('events')),
+    code: v.string(),
+    discountPct: v.number(),
+    uses: v.number(),
+    active: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index('by_organizerId', ['organizerId'])
+    .index('by_code', ['code']),
+
+  // 22. Organizer Payout Disbursements
+  payouts: defineTable({
+    organizerId: v.id('organizers'),
+    userId: v.id('users'),
+    amount: v.number(),
+    bankName: v.string(),
+    bankCode: v.string(),
+    accountNumber: v.string(),
+    accountName: v.string(),
+    reference: v.string(),
+    status: v.union(v.literal('pending'), v.literal('paid'), v.literal('failed')),
+    createdAt: v.number(),
+  })
+    .index('by_organizerId', ['organizerId'])
+    .index('by_userId', ['userId']),
+
+  // 23. Phone OTP Challenges (Organizer & Venue Verification)
+  phone_otps: defineTable({
+    userId: v.id('users'),
+    phone: v.string(),
+    code: v.string(),
+    verified: v.boolean(),
+    createdAt: v.number(),
+  }).index('by_userId', ['userId']),
+});

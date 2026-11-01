@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Icon } from '../design-system/Icon';
 import { Toast, Button, Cover } from '../design-system/ui';
 import { Logo } from '../design-system/Logo';
-import { useStore, usePlanItems } from '../store';
+import { useStore, useAuth, useActiveCity, usePlanItems } from '../store';
 import { computeFees, naira } from '../lib/format';
 import { EmailVerificationModal } from '../components/EmailVerificationModal';
 
@@ -29,14 +29,19 @@ export function Layout() {
   const [msg, setMsg] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const theme = useStore((s) => s.theme);
-  const user = useStore((s) => s.user);
-  const city = useStore((s) => s.city);
+  const { user } = useAuth();
+  const city = useActiveCity();
   const swapNotice = useStore((s) => s.swapNotice);
-  const count = useStore((s) => s.cart.length);
+  const setSwapNotice = useStore((s) => s.setSwapNotice);
+  const planItems = usePlanItems();
+  const count = planItems.length;
   const loc = useLocation();
   const setCartOpen = useStore((s) => s.setCartOpen);
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
-  const done = useCallback(() => setMsg(null), []);
+  const done = useCallback(() => {
+    setMsg(null);
+    setSwapNotice(null);
+  }, [setSwapNotice]);
 
   useEffect(() => {
     const onScroll = () => {
@@ -47,7 +52,6 @@ export function Layout() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Detail & checkout screens have their own docked bottom CTA bar—hide mobile tab bar to prevent overlap
   const hasOwnBottomBar =
     loc.pathname.startsWith('/event/') ||
     loc.pathname.startsWith('/space/') ||
@@ -84,7 +88,7 @@ export function Layout() {
             : 'border-slate-200/30 bg-white/50 backdrop-blur-md dark:border-slate-800/30 dark:bg-midnight-950/50'
         }`}
       >
-        <div className="mx-auto flex h-14 md:h-16 max-w-6xl items-center justify-between gap-3 md:gap-6 px-4 md:px-6">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 md:h-16 md:gap-6 md:px-6">
           <div className="flex items-center gap-2.5">
             <Link to="/home" aria-label="COORDINA home" className="shrink-0">
               <Logo size={28} />
@@ -116,32 +120,56 @@ export function Layout() {
             ))}
           </nav>
 
-          {/* Right Action Icons (Studio + Plan Cart) */}
+          {/* Right Role-Mapped Actions + Plan Cart */}
           <div className="flex items-center gap-2">
             {!user && (
               <Link
                 to="/auth?mode=signin"
-                className="inline-flex h-8 md:h-9 items-center gap-1 rounded-full bg-brand-500 px-3 md:px-3.5 text-xs font-semibold text-white shadow-sm shadow-brand-500/20 transition hover:bg-brand-600"
+                className="inline-flex h-8 items-center gap-1 rounded-full bg-brand-500 px-3 text-xs font-semibold text-white shadow-sm shadow-brand-500/20 transition hover:bg-brand-600 md:h-9 md:px-3.5"
               >
                 <Icon name="login" className="text-[15px]" />
                 <span>Log In</span>
               </Link>
             )}
-            <Link
-              to="/organiser"
-              className={`inline-flex h-8 md:h-9 items-center gap-1.5 rounded-full border px-2.5 md:px-3.5 text-xs font-medium transition ${
-                user?.role === 'organiser'
-                  ? 'border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950/60 dark:text-brand-300'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:bg-slate-800'
-              }`}
-            >
-              <Icon name="dashboard" className="text-[15px] text-brand-500" />
-              <span className="hidden sm:inline">{user?.role === 'organiser' ? 'Studio' : 'Host Event'}</span>
-            </Link>
+
+            {user?.role === 'admin' && (
+              <Link
+                to="/admin"
+                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-indigo-300 bg-indigo-50 px-2.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 md:h-9 md:px-3.5"
+              >
+                <Icon name="shield_person" className="text-[15px]" />
+                <span className="hidden sm:inline">Admin</span>
+              </Link>
+            )}
+
+            {user?.role === 'venue_manager' ? (
+              <Link
+                to="/venue-portal"
+                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-brand-300 bg-brand-50 px-2.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950/60 dark:text-brand-300 md:h-9 md:px-3.5"
+              >
+                <Icon name="storefront" className="text-[15px] text-brand-500" />
+                <span className="hidden sm:inline">Venue Desk</span>
+              </Link>
+            ) : (
+              <Link
+                to={user ? '/organiser' : '/auth?mode=signup&role=organiser'}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition md:h-9 md:px-3.5 ${
+                  user?.role === 'organiser'
+                    ? 'border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100 dark:border-brand-800 dark:bg-brand-950/60 dark:text-brand-300'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon name="dashboard" className="text-[15px] text-brand-500" />
+                <span className="hidden sm:inline">
+                  {user?.role === 'organiser' || user?.role === 'admin' ? 'Studio' : 'Host Event'}
+                </span>
+              </Link>
+            )}
+
             <button
               type="button"
               data-cart-target
-              className="inline-flex h-8 md:h-9 items-center gap-1.5 rounded-full bg-slate-900 px-2.5 md:px-3.5 text-xs font-medium text-white transition hover:bg-slate-800 dark:bg-brand-500 dark:hover:bg-brand-600"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-slate-900 px-2.5 text-xs font-medium text-white transition hover:bg-slate-800 dark:bg-brand-500 dark:hover:bg-brand-600 md:h-9 md:px-3.5"
               onClick={() => setCartOpen(true)}
               aria-label={`Open plan cart, ${count} items`}
             >
@@ -159,14 +187,14 @@ export function Layout() {
 
       {/* Bold Unverified Account Banner */}
       {user && !user.emailVerified && (
-        <div className="sticky top-14 md:top-16 z-30 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white shadow-md border-b border-amber-700/40">
+        <div className="sticky top-14 z-30 border-b border-amber-700/40 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white shadow-md md:top-16">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-xs font-medium">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur-xs font-bold animate-pulse">
+              <span className="flex h-7 w-7 shrink-0 animate-pulse items-center justify-center rounded-full bg-white/20 font-bold text-white backdrop-blur-xs">
                 <Icon name="warning" className="text-base" />
               </span>
               <div>
-                <span className="font-bold tracking-wide uppercase text-[10px] bg-black/30 px-2 py-0.5 rounded-full mr-2">
+                <span className="mr-2 rounded-full bg-black/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
                   Email Unverified
                 </span>
                 <span>
@@ -174,7 +202,7 @@ export function Layout() {
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setVerifyModalOpen(true)}
@@ -192,7 +220,6 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {/* Mobile Tab Bar (hidden on detail/checkout screens that mount their own sticky CTA bar) */}
       {!hasOwnBottomBar && (
         <nav
           className="fixed inset-x-0 bottom-0 z-40 flex h-[calc(4rem+env(safe-area-inset-bottom,0px))] w-full items-center border-t border-slate-200/70 bg-white/75 px-2 pb-[env(safe-area-inset-bottom,0px)] shadow-lg backdrop-blur-xl transition-all duration-300 dark:border-slate-800/70 dark:bg-midnight-950/80 md:hidden"
@@ -244,7 +271,7 @@ export function Layout() {
 function CartDrawer() {
   const open = useStore((s) => s.cartOpen);
   const setOpen = useStore((s) => s.setCartOpen);
-  const user = useStore((s) => s.user);
+  const { user } = useAuth();
   const items = usePlanItems();
   const remove = useStore((s) => s.removeFromCart);
   const nav = useNavigate();
@@ -274,7 +301,9 @@ function CartDrawer() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Your Plan</h2>
-                <p className="muted text-xs">{items.length} event{items.length === 1 ? '' : 's'} selected</p>
+                <p className="muted text-xs">
+                  {items.length} event{items.length === 1 ? '' : 's'} selected
+                </p>
               </div>
               <button
                 type="button"

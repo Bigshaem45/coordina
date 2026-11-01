@@ -1,7 +1,7 @@
 import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from './Icon';
-import { CATEGORY_GRADIENT, CATEGORY_ICON } from '../data/mock';
+import { CATEGORY_GRADIENT, CATEGORY_ICON } from '../lib/constants';
 import type { Category } from '../types';
 import { useStore } from '../store';
 
@@ -53,10 +53,11 @@ export function Chip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-xs font-medium transition-all duration-150 active:scale-[0.98] ${active
+      className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-4 text-xs font-medium transition-all duration-150 active:scale-[0.98] ${
+        active
           ? 'border-brand-500 bg-brand-500 text-white shadow-sm shadow-brand-500/20'
           : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200 dark:hover:bg-slate-800'
-        } ${className}`}
+      } ${className}`}
     >
       {children}
     </button>
@@ -118,8 +119,13 @@ export function Cover({
 }) {
   const lowData = useStore((s) => s.lowData);
   const [failed, setFailed] = useState(false);
-  const isUrl = gradient.startsWith('http') || gradient.startsWith('/');
-  const fallbackBg = category ? CATEGORY_GRADIENT[category] : isUrl ? 'linear-gradient(135deg,#1E293B,#4F46E5)' : gradient;
+  const isUrl = gradient.startsWith('http') || gradient.startsWith('/') || gradient.startsWith('data:');
+  const fallbackBg =
+    category && CATEGORY_GRADIENT[category]
+      ? CATEGORY_GRADIENT[category]
+      : isUrl
+      ? 'linear-gradient(135deg,#1E293B,#4F46E5)'
+      : gradient;
 
   return (
     <div
@@ -140,7 +146,7 @@ export function Cover({
       ) : (
         category && (
           <div className="flex h-full w-full items-center justify-center text-white/80">
-            <Icon name={CATEGORY_ICON[category]} className="text-4xl" />
+            <Icon name={CATEGORY_ICON[category] ?? 'celebration'} className="text-4xl" />
           </div>
         )
       )}
@@ -263,7 +269,7 @@ export function Stars({ value }: { value: number }) {
 export function Toast({ message, onDone }: { message: string | null; onDone: () => void }) {
   useEffect(() => {
     if (!message) return;
-    const t = setTimeout(onDone, 2600);
+    const t = setTimeout(onDone, 2800);
     return () => clearTimeout(t);
   }, [message, onDone]);
 
@@ -285,7 +291,17 @@ export function Toast({ message, onDone }: { message: string | null; onDone: () 
   );
 }
 
-export function Section({ title, subtitle, action, children }: { title: string; subtitle?: string; action?: ReactNode; children: ReactNode }) {
+export function Section({
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="mt-8 w-full min-w-0 max-w-full overflow-hidden">
       <div className="mb-3.5 flex items-end justify-between gap-2 px-4 md:px-0">

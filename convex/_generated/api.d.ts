@@ -9,9 +9,13 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as cart from "../cart.js";
+import type * as emails from "../emails.js";
 import type * as events from "../events.js";
 import type * as files from "../files.js";
 import type * as orders from "../orders.js";
+import type * as payouts from "../payouts.js";
+import type * as reports from "../reports.js";
 import type * as seed from "../seed.js";
 import type * as spaces from "../spaces.js";
 import type * as squads from "../squads.js";
@@ -25,9 +29,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  cart: typeof cart;
+  emails: typeof emails;
   events: typeof events;
   files: typeof files;
   orders: typeof orders;
+  payouts: typeof payouts;
+  reports: typeof reports;
   seed: typeof seed;
   spaces: typeof spaces;
   squads: typeof squads;

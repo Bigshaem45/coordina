@@ -3,15 +3,15 @@ import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from '../../design-system/Icon';
 import { Logo } from '../../design-system/Logo';
-import { Badge, BottomSheet, Button, Card } from '../../design-system/ui';
-import { CATEGORIES, CATEGORY_ICON, getSpace, minPrice } from '../../data/mock';
+import { Badge, BottomSheet, Button, Card, EmptyState, Skeleton } from '../../design-system/ui';
+import { CATEGORIES, CATEGORY_ICON, minPrice } from '../../lib/constants';
 import { fmtDate, fmtTime, naira } from '../../lib/format';
-import { useStore, useAllEvents, useAllSpaces } from '../../store';
+import { useStore, useAuth, useActiveCity, useEventsQuery, useAllSpaces } from '../../store';
 import { toast } from '../../lib/fx';
 
 const FEATURES = [
   { icon: 'explore', t: 'Curated Discovery', d: 'Concerts, rooftop dining, art walks, tech mixers, and community runs across Lagos and Abuja.' },
-  { icon: 'verified', t: 'Verified Venues', d: 'Transparent venue hours, real reviews, crowd levels, and on-site safety notes before you go.' },
+  { icon: 'verified', t: 'Verified Venues', d: 'Transparent venue hours, attendee reviews, crowd levels, and on-site safety notes before you go.' },
   { icon: 'event_note', t: 'Conflict-Free Itinerary', d: 'Add multiple events to one weekend plan. Catch time overlaps, traffic gaps, and budget limits automatically.' },
   { icon: 'confirmation_number', t: 'Single Checkout', d: 'Check out across multiple organisers in one payment via Card, Transfer, or USSD. Tickets work offline.' },
   { icon: 'groups', t: 'Squad Voting', d: 'Share a shortlist with friends, vote on where to go, and see the per-person split clearly.' },
@@ -19,12 +19,11 @@ const FEATURES = [
 ];
 
 export default function Landing() {
-  const user = useStore((s) => s.user);
-  const onboarded = useStore((s) => s.onboarded);
+  const { user } = useAuth();
   const signOut = useStore((s) => s.signOut);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
-  const city = useStore((s) => s.city);
+  const city = useActiveCity();
   const setCity = useStore((s) => s.setCity);
   const [apkModal, setApkModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -43,7 +42,6 @@ export default function Landing() {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
-  // Prevent background scroll when mobile menu is open
   useEffect(() => {
     if (mobileMenuOpen) {
       document.body.style.overflow = 'hidden';
@@ -67,9 +65,12 @@ export default function Landing() {
     toast('SHA-256 Checksum copied to clipboard');
   };
 
-  const allEvents = useAllEvents();
+  const { events: allEvents, isLoading: eventsLoading } = useEventsQuery();
   const allSpaces = useAllSpaces();
   const featured = allEvents.slice(0, 6);
+  const heroPreviewEvents = allEvents.filter((e) => e.city === city).slice(0, 2);
+  const displayHeroEvents = heroPreviewEvents.length > 0 ? heroPreviewEvents : allEvents.slice(0, 2);
+  const heroTotal = displayHeroEvents.reduce((sum, e) => sum + minPrice(e), 0);
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip bg-[var(--bg)] pb-20 text-[var(--text)] md:pb-0">
@@ -86,7 +87,6 @@ export default function Landing() {
             <Logo size={30} />
           </Link>
 
-          {/* Desktop Navigation Links */}
           <div className="hidden items-center gap-6 text-sm text-slate-600 dark:text-slate-300 md:flex">
             <a href="#featured" className="hover:text-slate-900 dark:hover:text-white">Featured</a>
             <a href="#features" className="hover:text-slate-900 dark:hover:text-white">Features</a>
@@ -97,11 +97,22 @@ export default function Landing() {
             </a>
           </div>
 
-          {/* Desktop Account & Action Buttons */}
           <div className="hidden items-center gap-2.5 md:flex" aria-label="Account">
             {user ? (
               <>
-                <Link to={onboarded ? '/home' : '/onboarding'}>
+                <Link
+                  to={
+                    user.role === 'admin'
+                      ? '/admin'
+                      : user.role === 'organiser'
+                      ? '/organiser'
+                      : user.role === 'venue_manager'
+                      ? '/venue-portal'
+                      : user.onboarded
+                      ? '/home'
+                      : '/onboarding'
+                  }
+                >
                   <Button size="sm">Go to App</Button>
                 </Link>
                 <Button variant="ghost" size="sm" onClick={() => signOut()}>
@@ -120,7 +131,6 @@ export default function Landing() {
             )}
           </div>
 
-          {/* Mobile Right Controls: Explore CTA + Hamburger Toggle */}
           <div className="flex items-center gap-2 md:hidden">
             <Link to="/home">
               <Button size="sm" className="h-9 px-3.5 text-xs">
@@ -140,11 +150,9 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* Mobile Slide-Over Navigation Drawer */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <div className="fixed inset-0 z-50 md:hidden">
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -154,7 +162,6 @@ export default function Landing() {
               className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs"
             />
 
-            {/* Slide-out Menu Panel */}
             <motion.aside
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
@@ -163,7 +170,6 @@ export default function Landing() {
               className="surface absolute right-0 top-0 flex h-full w-[86vw] max-w-sm flex-col overflow-y-auto border-l border-[var(--border)] p-5 shadow-2xl"
               aria-label="Mobile Navigation"
             >
-              {/* Drawer Top Header */}
               <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
                 <Logo size={26} />
                 <button
@@ -176,7 +182,6 @@ export default function Landing() {
                 </button>
               </div>
 
-              {/* City Switcher in Drawer */}
               <div className="mt-4 flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-midnight-800">
                 <span className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
                   <Icon name="location_on" className="text-sm text-brand-500" />
@@ -200,15 +205,18 @@ export default function Landing() {
                 </div>
               </div>
 
-              {/* Navigation Links List */}
               <nav className="mt-5 space-y-1" aria-label="Mobile primary navigation">
                 {[
                   { to: '/home', icon: 'explore', label: 'Explore Events', desc: 'Concerts, nightlife, food & art' },
                   { to: '/discover', icon: 'local_bar', label: 'Verified Spaces', desc: 'Rooftops, lounges & galleries' },
                   { to: '/map', icon: 'map', label: 'Interactive Map', desc: `Live event pins across ${city}` },
                   { to: '/team', icon: 'groups', label: 'Leadership Team', desc: 'Meet CEO, CTO Samuel Onuegbu & execs' },
-                  { to: '/organiser', icon: 'dashboard', label: 'Organiser Studio', desc: 'Host events & verify credentials' },
-                  { to: '/venue-portal', icon: 'verified', label: 'Venue Verification', desc: 'Venue manager confirmation portal' },
+                  {
+                    to: user ? '/organiser' : '/auth?mode=signup&role=organiser',
+                    icon: 'dashboard',
+                    label: 'Organiser Studio',
+                    desc: 'Host events & verify credentials',
+                  },
                 ].map((item) => (
                   <Link
                     key={item.to}
@@ -228,7 +236,6 @@ export default function Landing() {
                 ))}
               </nav>
 
-              {/* Quick Android Download Card */}
               <div className="mt-5 rounded-2xl border border-neon-500/30 bg-neon-50/50 p-4 dark:bg-neon-500/10">
                 <div className="flex items-center justify-between">
                   <span className="inline-flex items-center gap-1 text-xs font-bold text-neon-700 dark:text-neon-400">
@@ -265,13 +272,12 @@ export default function Landing() {
                 </div>
               </div>
 
-              {/* Account / Demo Actions */}
               <div className="mt-auto pt-6">
                 {user ? (
                   <div className="space-y-2 border-t border-[var(--border)] pt-4">
                     <div className="flex items-center gap-2.5 px-1 text-xs text-slate-500">
                       <Icon name="account_circle" className="text-base text-brand-500" />
-                      <span className="truncate">{user.name || 'Logged in user'}</span>
+                      <span className="truncate">{user.name}</span>
                     </div>
                     <Link to="/home" onClick={() => setMobileMenuOpen(false)} className="block">
                       <Button full size="md">
@@ -307,7 +313,6 @@ export default function Landing() {
                   </div>
                 )}
 
-                {/* Dark / Light Mode Switcher */}
                 <div className="mt-4 flex items-center justify-between border-t border-[var(--border)] pt-3 text-xs text-slate-500">
                   <span>Theme: {theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</span>
                   <button
@@ -325,9 +330,9 @@ export default function Landing() {
         )}
       </AnimatePresence>
 
-      {/* Floating Mobile Bottom Navigation Bar (Docked on Mobile) */}
+      {/* Floating Mobile Bottom Navigation Bar */}
       <aside
-        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between border-t border-[var(--border)] bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-between border-t border-[var(--border)] bg-white/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3 backdrop-blur-xl dark:bg-midnight-900/95 md:hidden"
         aria-label="Quick mobile actions"
       >
         <div className="flex min-w-0 flex-1 flex-col">
@@ -363,7 +368,7 @@ export default function Landing() {
           <div className="relative grid items-center gap-8 p-6 sm:p-10 md:grid-cols-12 md:p-14">
             <div className="md:col-span-7">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-white backdrop-blur-md">
-                <Icon name="location_on" className="text-brand-300 text-sm" /> Lagos · Abuja
+                <Icon name="location_on" className="text-sm text-brand-300" /> Lagos · Abuja
               </span>
               <h1 className="mt-4 text-3xl font-bold leading-[1.12] tracking-tight text-white sm:text-5xl">
                 Discover the best events &amp; spaces near you.
@@ -381,42 +386,56 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Clean Floating White Itinerary Card */}
+            {/* Live Convex Itinerary Preview Card */}
             <div className="md:col-span-5">
               <div className="rounded-2xl bg-white p-5 text-slate-900 shadow-float">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
-                    <p className="text-xs font-medium text-slate-500">Weekend Plan</p>
-                    <p className="text-sm font-semibold text-slate-900">Saturday in Lagos</p>
+                    <p className="text-xs font-medium text-slate-500">Live Lineup</p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      Upcoming in {displayHeroEvents[0]?.city ?? city}
+                    </p>
                   </div>
-                  <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-600">
-                    2 Events · ₦25,000
-                  </span>
+                  {displayHeroEvents.length > 0 && (
+                    <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-600">
+                      {displayHeroEvents.length} Event{displayHeroEvents.length === 1 ? '' : 's'} ·{' '}
+                      {heroTotal === 0 ? 'Free' : naira(heroTotal)}
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-3.5 space-y-2.5 text-xs">
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5">
-                    <img
-                      src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=200&q=75"
-                      alt=""
-                      className="h-11 w-11 shrink-0 rounded-lg object-cover"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold text-slate-900">Afrobeats Night Live</p>
-                      <p className="text-slate-500">8:00 PM · Cloud 9, Lekki · ₦10,000</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5">
-                    <img
-                      src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=200&q=75"
-                      alt=""
-                      className="h-11 w-11 shrink-0 rounded-lg object-cover"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold text-slate-900">Rooftop Sunset Brunch</p>
-                      <p className="text-slate-500">11:00 AM · The Nest, VI · ₦15,000</p>
-                    </div>
-                  </div>
+                  {eventsLoading ? (
+                    <>
+                      <Skeleton className="h-16" />
+                      <Skeleton className="h-16" />
+                    </>
+                  ) : displayHeroEvents.length === 0 ? (
+                    <p className="py-4 text-center text-slate-500">
+                      No published events yet. Sign in as an Event Planner to publish the first experience.
+                    </p>
+                  ) : (
+                    displayHeroEvents.map((ev) => (
+                      <Link
+                        key={ev.id}
+                        to={`/event/${ev.id}`}
+                        className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 transition hover:border-brand-300"
+                      >
+                        <img
+                          src={ev.image}
+                          alt={ev.title}
+                          className="h-11 w-11 shrink-0 rounded-lg object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold text-slate-900">{ev.title}</p>
+                          <p className="truncate text-slate-500">
+                            {fmtTime(ev.start)} · {ev.venueName ?? ev.area} ·{' '}
+                            {minPrice(ev) === 0 ? 'Free' : naira(minPrice(ev))}
+                          </p>
+                        </div>
+                      </Link>
+                    ))
+                  )}
                 </div>
 
                 <Link to="/home" className="mt-4 block">
@@ -449,7 +468,7 @@ export default function Landing() {
         <div className="mb-6 flex items-end justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Popular Upcoming Events</h2>
-            <p className="muted mt-1 text-sm">Handpicked concerts, dining, art, and social gatherings.</p>
+            <p className="muted mt-1 text-sm">Live listings across Abuja and Lagos drawn directly from COORDINA Cloud.</p>
           </div>
           <Link to="/home">
             <Button variant="outline" size="sm">
@@ -458,60 +477,77 @@ export default function Landing() {
           </Link>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {featured.map((e) => {
-            const sp = allSpaces.find((s) => s.id === e.spaceId) ?? getSpace(e.spaceId);
-            const d = new Date(e.start);
-            const mon = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-            const day = d.getDate();
-            const p = minPrice(e);
-            return (
-              <Link
-                key={e.id}
-                to={`/event/${e.id}`}
-                className="surface group cursor-pointer overflow-hidden rounded-2xl shadow-card transition hover:-translate-y-0.5 hover:shadow-float block"
-              >
-                <div className="relative h-48 overflow-hidden bg-slate-200">
-                  <img
-                    src={e.image}
-                    alt={e.title}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                  <span className="absolute left-3 top-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-xs">
-                    {p === 0 ? 'Free' : naira(p)}
-                  </span>
-                  <span className="absolute right-3 top-3 rounded-lg bg-slate-900/75 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md">
-                    {e.category}
-                  </span>
-                </div>
-                <div className="flex gap-3.5 p-4">
-                  <div className="flex w-10 shrink-0 flex-col items-center pt-0.5 text-center">
-                    <span className="text-[11px] font-semibold tracking-wider text-brand-500">{mon}</span>
-                    <span className="text-lg font-bold leading-tight text-slate-900 dark:text-white">{day}</span>
+        {eventsLoading ? (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-72" />
+            ))}
+          </div>
+        ) : featured.length === 0 ? (
+          <EmptyState
+            icon="event"
+            title="No upcoming events published yet"
+            text="Published events from verified organizers appear here automatically."
+          />
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {featured.map((e) => {
+              const sp = allSpaces.find((s) => s.id === e.spaceId);
+              const d = new Date(e.start);
+              const mon = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+              const day = d.getDate();
+              const p = minPrice(e);
+              return (
+                <Link
+                  key={e.id}
+                  to={`/event/${e.id}`}
+                  className="surface group block cursor-pointer overflow-hidden rounded-2xl shadow-card transition hover:-translate-y-0.5 hover:shadow-float"
+                >
+                  <div className="relative h-48 overflow-hidden bg-slate-200">
+                    <img
+                      src={e.image}
+                      alt={e.title}
+                      loading="lazy"
+                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <span className="absolute left-3 top-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-xs">
+                      {p === 0 ? 'Free' : naira(p)}
+                    </span>
+                    <span className="absolute right-3 top-3 rounded-lg bg-slate-900/75 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md">
+                      {e.category}
+                    </span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-base font-semibold text-slate-900 dark:text-white">{e.title}</h3>
-                    <p className="muted mt-0.5 truncate text-xs">
-                      {fmtDate(e.start)} · {fmtTime(e.start)}
-                    </p>
-                    <p className="muted mt-1 flex items-center gap-1 truncate text-xs">
-                      <Icon name="location_on" className="text-[14px] text-slate-400" />
-                      <span className="truncate">{sp?.name ?? e.area}, {e.area}</span>
-                      {sp?.verified && <Icon name="verified" filled className="text-[13px] text-neon-500" />}
-                    </p>
+                  <div className="flex gap-3.5 p-4">
+                    <div className="flex w-10 shrink-0 flex-col items-center pt-0.5 text-center">
+                      <span className="text-[11px] font-semibold tracking-wider text-brand-500">{mon}</span>
+                      <span className="text-lg font-bold leading-tight text-slate-900 dark:text-white">{day}</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-base font-semibold text-slate-900 dark:text-white">{e.title}</h3>
+                      <p className="muted mt-0.5 truncate text-xs">
+                        {fmtDate(e.start)} · {fmtTime(e.start)}
+                      </p>
+                      <p className="muted mt-1 flex items-center gap-1 truncate text-xs">
+                        <Icon name="location_on" className="text-[14px] text-slate-400" />
+                        <span className="truncate">
+                          {sp?.name ?? e.venueName ?? e.area}, {e.city}
+                        </span>
+                        {sp?.verified && (
+                          <Icon name="verified" filled className="text-[13px] text-neon-500" />
+                        )}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Android APK Download Showcase Section */}
       <section id="download" className="mx-auto max-w-6xl px-4 py-12 md:px-6">
         <div className="relative overflow-hidden rounded-3xl border border-slate-800/80 bg-gradient-to-br from-[#090D16] via-[#0F172A] to-[#161F33] p-6 text-white shadow-2xl md:p-12">
-          {/* Subtle brand ambient glow without any white bleaching */}
           <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-brand-600/10 blur-3xl" />
           <div className="pointer-events-none absolute -left-20 -top-20 h-64 w-64 rounded-full bg-neon-500/10 blur-3xl" />
 
@@ -528,10 +564,15 @@ export default function Landing() {
               </p>
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
-                <Button size="lg" onClick={downloadApk} className="bg-neon-500 text-slate-950 hover:bg-neon-400 font-bold">
+                <Button size="lg" onClick={downloadApk} className="bg-neon-500 font-bold text-slate-950 hover:bg-neon-400">
                   <Icon name="download" /> Download APK (18.4 MB)
                 </Button>
-                <Button size="lg" variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10" onClick={() => setApkModal(true)}>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-white/20 bg-white/5 text-white hover:bg-white/10"
+                  onClick={() => setApkModal(true)}
+                >
                   Install Instructions
                 </Button>
               </div>
@@ -541,13 +582,12 @@ export default function Landing() {
                 <span>•</span>
                 <span>Package: ng.coordina.app</span>
                 <span>•</span>
-                <button type="button" onClick={copyHash} className="hover:text-white underline decoration-dotted">
+                <button type="button" onClick={copyHash} className="underline decoration-dotted hover:text-white">
                   Verify SHA-256 Checksum
                 </button>
               </div>
             </div>
 
-            {/* QR Code & Phone Card */}
             <div className="md:col-span-5">
               <a
                 href={BETADROP_URL}
@@ -610,7 +650,7 @@ export default function Landing() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button size="sm" onClick={downloadApk} className="bg-neon-500 text-slate-950 hover:bg-neon-400 font-bold">
+            <Button size="sm" onClick={downloadApk} className="bg-neon-500 font-bold text-slate-950 hover:bg-neon-400">
               <Icon name="android" className="text-base" /> Download APK
             </Button>
             <Link to="/home">
@@ -625,7 +665,6 @@ export default function Landing() {
         </div>
       </footer>
 
-      {/* Android APK Install Guide Bottom Sheet */}
       <BottomSheet open={apkModal} onClose={() => setApkModal(false)} title="Install COORDINA on Android">
         <div className="space-y-4">
           <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-midnight-800">
@@ -639,7 +678,7 @@ export default function Landing() {
           </div>
 
           <div className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
-            <p className="font-semibold text-slate-900 dark:text-slate-100 text-sm">3 Quick Installation Steps:</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">3 Quick Installation Steps:</p>
             <div className="flex items-start gap-2.5 rounded-xl border border-slate-100 p-2.5 dark:border-slate-800">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-500 text-[10px] font-bold text-white">1</span>
               <span>Tap <b>Download APK</b> below to start the direct package download.</span>
@@ -655,7 +694,7 @@ export default function Landing() {
           </div>
 
           <div className="pt-2">
-            <Button full size="lg" onClick={downloadApk} className="bg-neon-500 text-slate-950 hover:bg-neon-400 font-bold">
+            <Button full size="lg" onClick={downloadApk} className="bg-neon-500 font-bold text-slate-950 hover:bg-neon-400">
               <Icon name="open_in_new" /> Open Betadrop Download Page
             </Button>
           </div>

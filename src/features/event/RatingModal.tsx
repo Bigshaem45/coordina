@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
 import { BottomSheet, Button, Chip } from '../../design-system/ui';
-import { useStore } from '../../store';
+import { useAuth, useStore } from '../../store';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 import { toast } from '../../lib/fx';
@@ -32,7 +33,10 @@ export default function RatingModal({
   eventTitle,
   onRatingSubmitted,
 }: RatingModalProps) {
-  const user = useStore((s) => s.user);
+  const { user } = useAuth();
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+  const nav = useNavigate();
+  const loc = useLocation();
   const [stars, setStars] = useState(5);
   const [hoverStars, setHoverStars] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>(['🔥 Electric Vibe']);
@@ -47,24 +51,33 @@ export default function RatingModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
+    if (!user) {
+      onClose();
+      toast('Please log in to rate this event.');
+      nav(`/auth?mode=signin&redirect=${encodeURIComponent(loc.pathname)}`);
+      return;
+    }
+    if (!user.emailVerified) {
+      onClose();
+      toast('Verify your email before posting a review.');
+      setVerifyModalOpen(true);
+      return;
+    }
 
+    setSubmitting(true);
     try {
-      await convex.mutation((api as any).reports?.submitRating, {
+      const res = await convex.mutation(api.reports.submitRating, {
         eventId: eventId as any,
-        userName: user?.name || 'Verified Explorer',
+        userId: user._id as any,
         rating: stars,
         tags: selectedTags,
         review: review.trim() || undefined,
       });
       toast(`Thank you! Rated ${stars} stars.`);
-      onRatingSubmitted?.(stars);
+      onRatingSubmitted?.(res.avgRating);
       onClose();
-    } catch {
-      // Local optimistic confirmation
-      toast(`Rating submitted! Rated ${stars} stars.`);
-      onRatingSubmitted?.(stars);
-      onClose();
+    } catch (err: any) {
+      toast(err?.message || 'Could not submit rating.');
     } finally {
       setSubmitting(false);
     }
@@ -75,9 +88,10 @@ export default function RatingModal({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="text-center">
           <p className="text-xs text-slate-500">How was your time at</p>
-          <p className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">{eventTitle}?</p>
+          <p className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">
+            {eventTitle}?
+          </p>
 
-          {/* 5-Star Rating Selector */}
           <div className="my-4 flex items-center justify-center gap-2">
             {[1, 2, 3, 4, 5].map((num) => {
               const active = (hoverStars || stars) >= num;
@@ -106,34 +120,28 @@ export default function RatingModal({
             {stars === 5
               ? 'Incredible Experience 🌟'
               : stars === 4
-              ? 'Great Vibes 👍'
-              : stars === 3
-              ? 'Decent / Average 😐'
-              : stars === 2
-              ? 'Room for Improvement 👎'
-              : 'Disappointing Experience 💔'}
+                ? 'Great Vibes 👍'
+                : stars === 3
+                  ? 'Decent / Average 😐'
+                  : stars === 2
+                    ? 'Room for Improvement 👎'
+                    : 'Disappointing Experience 💔'}
           </span>
         </div>
 
-        {/* Quick Review Tag Chips */}
         <div>
           <label className="mb-2 block text-xs font-semibold text-slate-700 dark:text-slate-300">
             What stood out? (Select highlights)
           </label>
           <div className="flex flex-wrap gap-1.5">
             {REVIEW_TAGS.map((t) => (
-              <Chip
-                key={t}
-                active={selectedTags.includes(t)}
-                onClick={() => toggleTag(t)}
-              >
+              <Chip key={t} active={selectedTags.includes(t)} onClick={() => toggleTag(t)}>
                 {t}
               </Chip>
             ))}
           </div>
         </div>
 
-        {/* Written Review */}
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-slate-700 dark:text-slate-300">
             Written Note (Optional)
@@ -153,7 +161,7 @@ export default function RatingModal({
             Cancel
           </Button>
           <Button type="submit" className="flex-1" disabled={submitting}>
-            {submitting ? 'Posting...' : 'Submit Rating'}
+            {submitting ? 'Posting...' : !user ? 'Sign In & Rate' : 'Submit Rating'}
           </Button>
         </div>
       </form>

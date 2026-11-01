@@ -3,496 +3,385 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import type { CEvent, Ticket, Vibe, Category, City, EventVerificationRecord, AuditLog, VerificationStatus, Space, BlacklistedIdentity } from '../types';
-import { events as seedEvents, spaces as seedSpaces, initialVerifications, initialAuditLogs, AREAS } from '../data/mock';
+import { convex } from '../lib/convex';
+import { AREAS } from '../lib/constants';
+import type {
+  CEvent,
+  Ticket,
+  Vibe,
+  Category,
+  City,
+  VerificationStatus,
+  Space,
+  UserRole,
+} from '../types';
 import type { PlanItem } from '../lib/clash';
 import { toast } from '../lib/fx';
 
-export interface CartLine { eventId: string; tierId: string; qty: number }
-export interface Order { id: string; at: string; total: number; fees: number; method: string; ticketIds: string[] }
-export interface SquadMember { name: string; votes: Record<string, boolean> }
-export interface Squad { id: string; name: string; eventIds: string[]; members: SquadMember[] }
-export interface Booking { id: string; spaceId: string; date: string; guests: number; status: 'Requested' | 'Confirmed' }
-export interface AdminItem { id: string; kind: 'Venue' | 'Event'; name: string; by: string; status: 'pending' | 'approved' | 'rejected' }
-export interface FraudFlag { id: string; reason: string; target: string; level: 'high' | 'med' | 'low'; resolved: boolean }
+export type { UserRole };
 
-export type UserRole = 'attendee' | 'organiser';
-export interface User { name: string; email: string; role: UserRole; emailVerified?: boolean }
-interface Account extends User {
-  password: string;
-  emailVerificationCode?: string;
-  resetCode?: string;
+export interface CartLine {
+  eventId: string;
+  tierId: string;
+  qty: number;
 }
 
-interface State {
-  user: User | null; accounts: Account[];
-  signUp: (name: string, email: string, password: string, role?: UserRole) => string | null;
-  signIn: (email: string, password: string) => string | null;
-  upgradeToOrganiser: () => void;
-  verifyEmail: (email: string, code: string) => boolean;
-  requestEmailVerification: (email: string) => string | null;
-  requestPasswordReset: (email: string) => { success: boolean; code?: string; message?: string };
-  resetPassword: (email: string, code: string, newPass: string) => boolean;
-  socialSignIn: (provider: string) => void;
+export interface SessionUser {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  city: City;
+  interests: Category[];
+  vibe: Vibe;
+  budget: number;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  onboarded: boolean;
+  organizerId: string | null;
+  organizer: any | null;
+}
+
+interface UIStoreState {
+  sessionUserId: string | null;
+  setSessionUserId: (id: string | null) => void;
   signOut: () => void;
-  onboarded: boolean; city: City; interests: Category[]; budget: number; vibe: Vibe;
-  theme: 'dark' | 'light'; lowData: boolean;
-  cart: CartLine[]; tickets: Ticket[]; orders: Order[];
-  customEvents: CEvent[]; squads: Squad[]; bookings: Booking[];
-  savedCard: string | null; reports: { id: string; target: string; reason: string }[];
-  admin: AdminItem[]; flags: FraudFlag[]; checkedIn: Record<string, number>;
-  verifications: EventVerificationRecord[]; auditLogs: AuditLog[];
-  blacklistedIdentities: BlacklistedIdentity[];
-  cartOpen: boolean; swapNotice: string | null;
-  verifyModalOpen: boolean;
-  setVerifyModalOpen: (b: boolean) => void;
 
-  finishOnboarding: (p: { city: City; interests: Category[]; budget: number; vibe: Vibe }) => void;
-  setTheme: (t: 'dark' | 'light') => void; setBudget: (n: number) => void; setCity: (c: City) => void;
+  guestCity: City;
+  theme: 'dark' | 'light';
+  lowData: boolean;
+  cartOpen: boolean;
+  verifyModalOpen: boolean;
+  swapNotice: string | null;
+  offlineTicketsByUser: Record<string, Ticket[]>;
+
+  setTheme: (t: 'dark' | 'light') => void;
   toggleLowData: () => void;
-  addToCart: (l: CartLine) => void; removeFromCart: (eventId: string) => void; setQty: (eventId: string, qty: number) => void;
-  swapInCart: (oldId: string, newEventId: string) => void; clearCart: () => void;
   setCartOpen: (b: boolean) => void;
-  completeOrder: (lines: CartLine[], total: number, fees: number, method: string) => Order;
-  transferTicket: (id: string, to: string) => void; refundTicket: (id: string) => void;
-  addCustomEvent: (e: CEvent) => void;
-  createSquad: (name: string, eventIds: string[], members: string[]) => string;
-  vote: (squadId: string, member: string, eventId: string, yes: boolean) => void;
-  addMember: (squadId: string, name: string) => void;
-  addBooking: (b: Omit<Booking, 'id' | 'status'>) => void;
-  report: (target: string, reason: string) => void;
-  adminDecide: (id: string, s: 'approved' | 'rejected') => void; resolveFlag: (id: string) => void;
-  adminReviewVerification: (id: string, status: VerificationStatus, reviewerNotes?: string) => void;
-  confirmVenueBooking: (token: string, confirmed: boolean, notes?: string) => boolean;
-  submitForVerification: (rec: EventVerificationRecord) => void;
-  addBlacklistIdentity: (record: BlacklistedIdentity) => void;
-  pardonBlacklistIdentity: (id: string) => void;
-  checkIdentityIsBlacklisted: (opts: { email?: string; phone?: string; nin?: string }) => { blacklisted: boolean; reason?: string; matchedField?: string };
-  checkIn: (eventId: string) => void;
+  setVerifyModalOpen: (b: boolean) => void;
+  setSwapNotice: (msg: string | null) => void;
+  setOfflineTicketsForUser: (userId: string, tickets: Ticket[]) => void;
+
+  setCity: (c: City) => Promise<void>;
+  setBudget: (n: number) => Promise<void>;
+  addToCart: (l: CartLine) => Promise<void>;
+  removeFromCart: (eventId: string) => Promise<void>;
+  setQty: (eventId: string, qty: number) => Promise<void>;
+  swapInCart: (oldId: string, newEventId: string) => Promise<void>;
+  clearCart: () => Promise<void>;
 }
 
-const uid = () => Math.random().toString(36).slice(2, 9);
+const normalizeCategory = (cat: string): Category => {
+  if (cat === 'Arts & Culture') return 'Art';
+  const valid: Category[] = [
+    'Concerts',
+    'Nightlife',
+    'Food',
+    'Faith',
+    'Tech',
+    'Art',
+    'Sports',
+    'Networking',
+  ];
+  return valid.includes(cat as Category) ? (cat as Category) : 'Concerts';
+};
 
-export const useStore = create<State>()(
+export function mapConvexEvent(e: any): CEvent {
+  const areaCoord = AREAS[e.area] ?? (e.city === 'Lagos' ? { lat: 6.4281, lng: 3.4219 } : { lat: 9.0765, lng: 7.4698 });
+  return {
+    id: String(e._id),
+    title: e.title,
+    category: normalizeCategory(e.category),
+    vibe: (e.vibe as Vibe) || 'Energetic',
+    city: (e.city as City) || 'Abuja',
+    area: e.area,
+    spaceId: e.spaceId ? String(e.spaceId) : '',
+    venueName: e.venueName,
+    address: e.address,
+    organiserId: String(e.organizerId),
+    organiserName: e.organizerName ?? 'Event Host',
+    organizerVerified: Boolean(e.organizerVerified),
+    start: e.start,
+    end: e.end,
+    image: e.image,
+    description: e.description,
+    tiers: e.tiers ?? [],
+    lat: typeof e.lat === 'number' ? e.lat : areaCoord.lat,
+    lng: typeof e.lng === 'number' ? e.lng : areaCoord.lng,
+    status: e.status,
+    rating: e.rating ?? 0,
+    reviewCount: e.reviewCount ?? 0,
+    reportCount: e.reportCount ?? 0,
+    expectedAttendance: e.expectedAttendance ?? 0,
+    verificationStatus: (e.verificationStatus as VerificationStatus) ?? 'Unverified',
+  };
+}
+
+export function mapConvexSpace(s: any): Space {
+  return {
+    id: String(s._id),
+    name: s.name,
+    type: s.type,
+    city: (s.city as City) || 'Abuja',
+    area: s.area,
+    address: s.address,
+    lat: s.lat,
+    lng: s.lng,
+    verified: Boolean(s.verified),
+    rating: s.rating ?? 0,
+    reviewCount: s.reviewCount ?? 0,
+    reviews: [],
+    hours: s.hours || 'Open daily · Contact venue desk for schedule',
+    image: s.image,
+    photos: s.photos && s.photos.length > 0 ? s.photos : [s.image],
+    about:
+      s.about ||
+      `${s.name} in ${s.area}, ${s.city}. Capacity up to ${s.capacity} guests.`,
+    safety:
+      s.safety ||
+      (s.verified
+        ? 'Verified physical address & venue security desk on COORDINA.'
+        : 'Standard venue entry protocols apply.'),
+    crowd: s.crowd || 'Moderate',
+    bookingFrom: s.bookingFrom ?? 25000,
+    amenities: s.amenities ?? [],
+    bestFor: s.bestFor ?? [],
+    dressCode: s.dressCode,
+    capacity: s.capacity,
+    contactPhone: s.contactPhone,
+    contactEmail: s.contactEmail,
+  };
+}
+
+export const useStore = create<UIStoreState>()(
   persist(
     (set, get) => ({
-      user: null, accounts: [],
-      signUp: (name, email, password, role = 'attendee') => {
-        const e = email.trim().toLowerCase();
-        if (get().accounts.some((a) => a.email === e)) return 'An account with this email already exists. Sign in instead.';
-        const vCode = Math.floor(100000 + Math.random() * 900000).toString();
-        const newAcc: Account = { name, email: e, password, role, emailVerified: false, emailVerificationCode: vCode };
-        set((s) => ({ accounts: [...s.accounts, newAcc], user: { name, email: e, role, emailVerified: false }, onboarded: false }));
-        return null;
-      },
-      signIn: (email, password) => {
-        const e = email.trim().toLowerCase();
-        const a = get().accounts.find((x) => x.email === e);
-        if (!a) return 'No account found for this email. Create one first.';
-        if (a.password !== password) return 'Incorrect password.';
-        set({ user: { name: a.name, email: a.email, role: a.role || 'attendee', emailVerified: !!a.emailVerified } });
-        return null;
-      },
-      upgradeToOrganiser: () => {
-        const u = get().user;
-        if (!u) return;
-        set((s) => ({
-          user: { ...u, role: 'organiser' },
-          accounts: s.accounts.map((a) => (a.email === u.email ? { ...a, role: 'organiser' } : a)),
-        }));
-      },
-      verifyEmail: (email, code) => {
-        const e = email.trim().toLowerCase();
-        const cleanCode = code.trim();
-        const a = get().accounts.find((x) => x.email === e);
-        const matches = (a && a.emailVerificationCode === cleanCode) || cleanCode === '123456' || cleanCode === '1234';
-        if (matches) {
-          set((s) => ({
-            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, emailVerified: true, emailVerificationCode: undefined } : acc)),
-            user: s.user && s.user.email === e ? { ...s.user, emailVerified: true } : s.user,
-            verifyModalOpen: false,
-          }));
-          return true;
-        }
-        return false;
-      },
-      requestEmailVerification: (email) => {
-        const e = email.trim().toLowerCase();
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const existing = get().accounts.find((x) => x.email === e);
-        if (existing) {
-          set((s) => ({
-            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, emailVerificationCode: code } : acc)),
-          }));
-        } else {
-          const u = get().user;
-          const newAcc: Account = {
-            name: u?.name || 'Explorer',
-            email: e,
-            password: '',
-            role: u?.role || 'attendee',
-            emailVerified: false,
-            emailVerificationCode: code,
-          };
-          set((s) => ({ accounts: [...s.accounts, newAcc] }));
-        }
-        return code;
-      },
-      requestPasswordReset: (email) => {
-        const e = email.trim().toLowerCase();
-        const a = get().accounts.find((x) => x.email === e);
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        if (a) {
-          set((s) => ({
-            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, resetCode: code } : acc)),
-          }));
-        }
-        return { success: true, code, message: `Password reset code generated for ${e}` };
-      },
-      resetPassword: (email, code, newPass) => {
-        const e = email.trim().toLowerCase();
-        const cleanCode = code.trim();
-        const a = get().accounts.find((x) => x.email === e);
-        if (!a) return false;
-        if (a.resetCode === cleanCode || cleanCode === '123456' || cleanCode === '1234') {
-          set((s) => ({
-            accounts: s.accounts.map((acc) => (acc.email === e ? { ...acc, password: newPass, resetCode: undefined } : acc)),
-          }));
-          return true;
-        }
-        return false;
-      },
-      socialSignIn: (provider) => {
-        const email = `attendee@${provider.toLowerCase()}.coordina.app`;
-        set({ user: { name: `${provider} Guest`, email, role: 'attendee' } });
-      },
-      signOut: () => set({ user: null }),
-      onboarded: false, city: 'Abuja', interests: [], budget: 100000, vibe: 'Energetic',
-      theme: 'light', lowData: false,
-      cart: [], tickets: [], orders: [], customEvents: [], squads: [], bookings: [],
-      savedCard: null, reports: [], checkedIn: {}, cartOpen: false, swapNotice: null,
+      sessionUserId: null,
+      setSessionUserId: (sessionUserId) =>
+        set({ sessionUserId, cartOpen: false, verifyModalOpen: false, swapNotice: null }),
+      signOut: () =>
+        set({
+          sessionUserId: null,
+          cartOpen: false,
+          verifyModalOpen: false,
+          swapNotice: null,
+        }),
+
+      guestCity: 'Abuja',
+      theme: 'light',
+      lowData: false,
+      cartOpen: false,
       verifyModalOpen: false,
-      setVerifyModalOpen: (verifyModalOpen) => set({ verifyModalOpen }),
-      verifications: initialVerifications,
-      auditLogs: initialAuditLogs,
-      blacklistedIdentities: [
-        {
-          id: 'blk-1',
-          organizerName: 'Phantom Rhythms Ent.',
-          email: 'events@phantomrhythms.ng',
-          phone: '+234 809 999 1122',
-          nin: 'NIN-9920194820',
-          cacNumber: 'RC-9988112',
-          reason: 'Fake lineup & non-existent venue contract in Maitama',
-          eventTitle: 'Secret Mansion Rave 2026',
-          flaggedAt: '2 days ago',
-          status: 'active_blacklist' as const,
-        },
-        {
-          id: 'blk-2',
-          organizerName: 'Urban Scalpers Global',
-          email: 'vip@urbanscalpers.ng',
-          phone: '+234 814 000 7788',
-          nin: 'NIN-1029384756',
-          cacNumber: 'RC-7722114',
-          reason: 'Ticket scalping ring extortion outside Paystack escrow',
-          eventTitle: 'Lagos Island VIP Gala',
-          flaggedAt: '5 days ago',
-          status: 'active_blacklist' as const,
-        },
-      ],
-      admin: [],
-      flags: [],
+      swapNotice: null,
+      offlineTicketsByUser: {},
 
-      finishOnboarding: (p) => set({ ...p, onboarded: true }),
-      setTheme: (theme) => set({ theme }), setBudget: (budget) => set({ budget }), setCity: (city) => set({ city }),
+      setTheme: (theme) => set({ theme }),
       toggleLowData: () => set((s) => ({ lowData: !s.lowData })),
+      setCartOpen: (cartOpen) => set({ cartOpen }),
+      setVerifyModalOpen: (verifyModalOpen) => set({ verifyModalOpen }),
+      setSwapNotice: (swapNotice) => set({ swapNotice }),
+      setOfflineTicketsForUser: (userId, tickets) =>
+        set((s) => ({
+          offlineTicketsByUser: {
+            ...s.offlineTicketsByUser,
+            [userId]: tickets,
+          },
+        })),
 
-      addToCart: (l) => {
-        const u = get().user;
-        if (!u) {
+      setCity: async (city) => {
+        set({ guestCity: city });
+        const uid = get().sessionUserId;
+        if (uid) {
+          try {
+            await convex.mutation(api.auth.updateProfile, {
+              id: uid as any,
+              city,
+            });
+          } catch {
+            // Keep guestCity synced locally if offline
+          }
+        }
+      },
+
+      setBudget: async (budget) => {
+        const uid = get().sessionUserId;
+        if (!uid) return;
+        try {
+          await convex.mutation(api.auth.updateProfile, {
+            id: uid as any,
+            budget,
+          });
+        } catch (err: any) {
+          toast(err?.message || 'Unable to save budget right now.');
+        }
+      },
+
+      addToCart: async (line) => {
+        const uid = get().sessionUserId;
+        if (!uid) {
           toast('Please log in to add events to your plan.');
           return;
         }
-        set((s) => ({ cart: [...s.cart.filter((c) => c.eventId !== l.eventId), l] }));
-      },
-      removeFromCart: (eventId) => set((s) => ({ cart: s.cart.filter((c) => c.eventId !== eventId) })),
-      setQty: (eventId, qty) => set((s) => ({ cart: s.cart.map((c) => (c.eventId === eventId ? { ...c, qty: Math.max(1, Math.min(10, qty)) } : c)) })),
-      swapInCart: (oldId, newEventId) => {
-        const ev = [...seedEvents, ...get().customEvents].find((e) => e.id === newEventId);
-        if (!ev) return;
-        const tier = ev.tiers.find((t) => t.remaining > 0) ?? ev.tiers[0];
-        set((s) => ({
-          cart: [...s.cart.filter((c) => c.eventId !== oldId), { eventId: newEventId, tierId: tier.id, qty: 1 }],
-          swapNotice: `Swapped in ${ev.title}`,
-        }));
-      },
-      clearCart: () => set({ cart: [] }),
-      setCartOpen: (cartOpen) => set({ cartOpen }),
-
-      completeOrder: (lines, total, fees, method) => {
-        const all = [...seedEvents, ...get().customEvents];
-        const orderId = 'CRD' + uid().toUpperCase();
-        const tickets: Ticket[] = [];
-        for (const l of lines) {
-          const ev = all.find((e) => e.id === l.eventId)!;
-          const tier = ev.tiers.find((t) => t.id === l.tierId)!;
-          for (let i = 0; i < l.qty; i++)
-            tickets.push({ id: uid().toUpperCase(), eventId: ev.id, tierId: tier.id, tierName: tier.name, price: tier.price, owner: 'You', used: false, orderId });
+        try {
+          await convex.mutation(api.cart.addOrUpdateItem, {
+            userId: uid as any,
+            eventId: line.eventId as any,
+            tierId: line.tierId,
+            qty: line.qty,
+          });
+        } catch (err: any) {
+          toast(err?.message || 'Could not add event to plan.');
         }
-        const order: Order = { id: orderId, at: new Date().toISOString(), total, fees, method, ticketIds: tickets.map((t) => t.id) };
-        set((s) => ({
-          tickets: [...tickets, ...s.tickets], orders: [order, ...s.orders],
-          cart: s.cart.filter((c) => !lines.some((l) => l.eventId === c.eventId)),
-          savedCard: method === 'Card' ? '•••• 4242' : s.savedCard,
-        }));
-        return order;
       },
-      transferTicket: (id, to) => set((s) => ({ tickets: s.tickets.map((t) => (t.id === id ? { ...t, owner: to } : t)) })),
-      refundTicket: (id) => set((s) => ({ tickets: s.tickets.map((t) => (t.id === id ? { ...t, refundRequested: true } : t)) })),
-      addCustomEvent: (e) => set((s) => ({ customEvents: [e, ...s.customEvents] })),
 
-      createSquad: (name, eventIds, members) => {
-        const id = uid();
-        set((s) => ({ squads: [{ id, name, eventIds, members: [{ name: 'You', votes: {} }, ...members.map((m) => ({ name: m, votes: {} }))] }, ...s.squads] }));
-        return id;
-      },
-      vote: (squadId, member, eventId, yes) =>
-        set((s) => ({
-          squads: s.squads.map((q) => q.id !== squadId ? q : { ...q, members: q.members.map((m) => (m.name === member ? { ...m, votes: { ...m.votes, [eventId]: yes } } : m)) }),
-        })),
-      addMember: (squadId, name) => set((s) => ({ squads: s.squads.map((q) => (q.id === squadId ? { ...q, members: [...q.members, { name, votes: {} }] } : q)) })),
-      addBooking: (b) => set((s) => ({ bookings: [{ ...b, id: uid(), status: 'Requested' }, ...s.bookings] })),
-      report: (target, reason) => set((s) => ({ reports: [{ id: uid(), target, reason }, ...s.reports] })),
-      adminDecide: (id, status) => set((s) => ({ admin: s.admin.map((a) => (a.id === id ? { ...a, status } : a)) })),
-      resolveFlag: (id) => set((s) => ({ flags: s.flags.map((f) => (f.id === id ? { ...f, resolved: true } : f)) })),
-      submitForVerification: (rec) =>
-        set((s) => ({
-          verifications: [rec, ...s.verifications.filter((v) => v.id !== rec.id)],
-          auditLogs: [
-            {
-              id: 'log-' + uid(),
-              timestamp: new Date().toISOString(),
-              actor: rec.organizerName,
-              action: 'Submission Created',
-              targetId: rec.id,
-              targetType: 'Event',
-              details: `Organizer submitted "${rec.eventTitle}" for verification with ${rec.documents.length} document(s).`,
-            },
-            ...s.auditLogs,
-          ],
-        })),
-      adminReviewVerification: (id, status, reviewerNotes) =>
-        set((s) => {
-          const rec = s.verifications.find((v) => v.id === id);
-          const title = rec?.eventTitle ?? id;
-          return {
-            verifications: s.verifications.map((v) =>
-              v.id === id
-                ? { ...v, status, reviewedAt: new Date().toISOString(), reviewerNotes: reviewerNotes ?? v.reviewerNotes }
-                : v,
-            ),
-            customEvents: s.customEvents.map((e) => (e.id === rec?.eventId ? { ...e, verificationStatus: status } : e)),
-            auditLogs: [
-              {
-                id: 'log-' + uid(),
-                timestamp: new Date().toISOString(),
-                actor: 'Verification Officer (Compliance)',
-                action: status,
-                targetId: id,
-                targetType: 'Event',
-                details: `Officer reviewed "${title}": Status changed to ${status}. ${reviewerNotes ? `Notes: ${reviewerNotes}` : ''}`,
-              },
-              ...s.auditLogs,
-            ],
-          };
-        }),
-      confirmVenueBooking: (token, confirmed, notes) => {
-        let matched = false;
-        set((s) => {
-          const target = s.verifications.find((v) => v.venueConfirmation.token === token);
-          if (!target) return s;
-          matched = true;
-          const newStatus = confirmed ? 'Venue Confirmed' : 'Verification Rejected';
-          return {
-            verifications: s.verifications.map((v) =>
-              v.venueConfirmation.token === token
-                ? {
-                    ...v,
-                    status: newStatus,
-                    venueConfirmation: {
-                      ...v.venueConfirmation,
-                      status: confirmed ? 'Confirmed' : 'Declined',
-                      respondedAt: new Date().toISOString(),
-                      notes: notes ?? (confirmed ? 'Confirmed by Venue Representative' : 'Declined by Venue Representative'),
-                    },
-                  }
-                : v,
-            ),
-            auditLogs: [
-              {
-                id: 'log-' + uid(),
-                timestamp: new Date().toISOString(),
-                actor: target.venueConfirmation.venueName + ' (Venue Rep)',
-                action: confirmed ? 'Venue Confirmed' : 'Venue Declined',
-                targetId: target.id,
-                targetType: 'Venue',
-                details: confirmed
-                  ? `Venue representative confirmed booking for "${target.eventTitle}".`
-                  : `Venue representative declined/rejected booking for "${target.eventTitle}". Notes: ${notes ?? 'None'}`,
-              },
-              ...s.auditLogs,
-            ],
-          };
-        });
-        return matched;
-      },
-      addBlacklistIdentity: (record) =>
-        set((s) => ({
-          blacklistedIdentities: [record, ...s.blacklistedIdentities.filter((b) => b.id !== record.id)],
-          auditLogs: [
-            {
-              id: 'log-' + uid(),
-              timestamp: new Date().toISOString(),
-              actor: 'Compliance Officer',
-              action: 'Organizer Flagged & Blacklisted',
-              targetId: record.id,
-              targetType: 'Organizer',
-              details: `Flagged organizer "${record.organizerName}" (Email: ${record.email}, Phone: ${record.phone}, NIN: ${record.nin}). Reason: ${record.reason}`,
-            },
-            ...s.auditLogs,
-          ],
-        })),
-      pardonBlacklistIdentity: (id) =>
-        set((s) => ({
-          blacklistedIdentities: s.blacklistedIdentities.map((b) =>
-            b.id === id ? { ...b, status: 'pardoned' as const } : b
-          ),
-          auditLogs: [
-            {
-              id: 'log-' + uid(),
-              timestamp: new Date().toISOString(),
-              actor: 'Compliance Officer',
-              action: 'Organizer Pardoned',
-              targetId: id,
-              targetType: 'Organizer',
-              details: `Pardoned organizer identity record ${id} from active blacklist.`,
-            },
-            ...s.auditLogs,
-          ],
-        })),
-      checkIdentityIsBlacklisted: ({ email, phone, nin }) => {
-        const list = get().blacklistedIdentities.filter((b) => b.status === 'active_blacklist');
-        const cleanEmail = email?.trim().toLowerCase();
-        const cleanPhone = phone?.trim();
-        const cleanNin = nin?.trim().toUpperCase();
-
-        const match = list.find(
-          (b) =>
-            (cleanEmail && b.email.toLowerCase() === cleanEmail) ||
-            (cleanPhone && b.phone === cleanPhone) ||
-            (cleanNin && b.nin.toUpperCase() === cleanNin)
-        );
-
-        if (match) {
-          return {
-            blacklisted: true,
-            reason: match.reason,
-            matchedField:
-              cleanNin && match.nin.toUpperCase() === cleanNin
-                ? 'Director NIN'
-                : cleanEmail && match.email.toLowerCase() === cleanEmail
-                ? 'Organizer Email'
-                : 'Phone Number',
-          };
+      removeFromCart: async (eventId) => {
+        const uid = get().sessionUserId;
+        if (!uid) return;
+        try {
+          await convex.mutation(api.cart.removeItem, {
+            userId: uid as any,
+            eventId: eventId as any,
+          });
+        } catch (err: any) {
+          toast(err?.message || 'Could not remove item.');
         }
-        return { blacklisted: false };
       },
-      checkIn: (eventId) => set((s) => ({ checkedIn: { ...s.checkedIn, [eventId]: (s.checkedIn[eventId] ?? 0) + 1 } })),
+
+      setQty: async (eventId, qty) => {
+        const uid = get().sessionUserId;
+        if (!uid) return;
+        try {
+          await convex.mutation(api.cart.setItemQty, {
+            userId: uid as any,
+            eventId: eventId as any,
+            qty,
+          });
+        } catch (err: any) {
+          toast(err?.message || 'Could not update ticket quantity.');
+        }
+      },
+
+      swapInCart: async (oldId, newEventId) => {
+        const uid = get().sessionUserId;
+        if (!uid) return;
+        try {
+          const res = await convex.mutation(api.cart.swapItem, {
+            userId: uid as any,
+            oldEventId: oldId as any,
+            newEventId: newEventId as any,
+          });
+          set({ swapNotice: `Swapped in ${res.title}` });
+        } catch (err: any) {
+          toast(err?.message || 'Could not swap event.');
+        }
+      },
+
+      clearCart: async () => {
+        const uid = get().sessionUserId;
+        if (!uid) return;
+        try {
+          await convex.mutation(api.cart.clearCart, {
+            userId: uid as any,
+          });
+        } catch {
+          // Ignore
+        }
+      },
     }),
-    { name: 'cho-store' },
-  ),
+    {
+      name: 'coordina-session-v2',
+      partialize: (s) => ({
+        sessionUserId: s.sessionUserId,
+        guestCity: s.guestCity,
+        theme: s.theme,
+        lowData: s.lowData,
+        offlineTicketsByUser: s.offlineTicketsByUser,
+      }),
+    }
+  )
 );
 
-export const useAllEvents = (): CEvent[] => {
-  const custom = useStore((s) => s.customEvents);
-  const dbEvents = useQuery(api.events.list, {});
+/** Live Convex hook returning the authenticated user mapped to their exact role & profile */
+export function useAuth(): {
+  user: SessionUser | null;
+  isLoading: boolean;
+  sessionUserId: string | null;
+} {
+  const sessionUserId = useStore((s) => s.sessionUserId);
+  const raw = useQuery(
+    api.auth.getMe,
+    sessionUserId ? { userId: sessionUserId as any } : 'skip'
+  );
 
-  return useMemo(() => {
-    if (dbEvents && dbEvents.length > 0) {
-      const mapped: CEvent[] = dbEvents.map((e: any) => {
-        const areaCoord = AREAS[e.area] ?? { lat: 9.0765, lng: 7.4698 };
-        return {
-          id: e._id,
-          title: e.title,
-          category: e.category as Category,
-          vibe: e.vibe as Vibe,
-          city: e.city as City,
-          area: e.area,
-          spaceId: e.spaceId ?? '',
-          organiserId: e.organizerId,
-          start: e.start,
-          end: e.end,
-          image: e.image,
-          description: e.description,
-          tiers: e.tiers,
-          lat: areaCoord.lat,
-          lng: areaCoord.lng,
-          verificationStatus: e.verificationStatus as VerificationStatus,
-        };
-      });
-      const dbIds = new Set(mapped.map((m) => m.id));
-      const extras = custom.filter((c) => !dbIds.has(c.id));
-      return [...mapped, ...extras];
-    }
-    return [...custom, ...seedEvents];
-  }, [dbEvents, custom]);
+  const isLoading = Boolean(sessionUserId) && raw === undefined;
+
+  const user = useMemo<SessionUser | null>(() => {
+    if (!sessionUserId || !raw) return null;
+    return {
+      _id: String(raw._id),
+      name: raw.name,
+      email: raw.email,
+      phone: raw.phone,
+      role: raw.role as UserRole,
+      city: ((raw.city as City) || 'Abuja') as City,
+      interests: (raw.interests ?? []).map(normalizeCategory),
+      vibe: ((raw.vibe as Vibe) || 'Energetic') as Vibe,
+      budget: raw.budget ?? 100000,
+      emailVerified: Boolean(raw.emailVerified),
+      phoneVerified: Boolean(raw.phoneVerified),
+      onboarded: Boolean(raw.onboarded),
+      organizerId: raw.organizerId ? String(raw.organizerId) : null,
+      organizer: raw.organizer ?? null,
+    };
+  }, [sessionUserId, raw]);
+
+  return { user, isLoading, sessionUserId };
+}
+
+export function useCurrentUser(): SessionUser | null {
+  return useAuth().user;
+}
+
+export function useActiveCity(): City {
+  const guestCity = useStore((s) => s.guestCity);
+  const { user } = useAuth();
+  return user?.city ?? guestCity;
+}
+
+export function useEventsQuery(): { events: CEvent[]; isLoading: boolean } {
+  const dbEvents = useQuery(api.events.list, {});
+  const events = useMemo(() => (dbEvents ?? []).map(mapConvexEvent), [dbEvents]);
+  return { events, isLoading: dbEvents === undefined };
+}
+
+export const useAllEvents = (): CEvent[] => {
+  return useEventsQuery().events;
 };
 
-export const useAllSpaces = (): Space[] => {
+export function useSpacesQuery(): { spaces: Space[]; isLoading: boolean } {
   const dbSpaces = useQuery(api.spaces.list, {});
+  const spaces = useMemo(() => (dbSpaces ?? []).map(mapConvexSpace), [dbSpaces]);
+  return { spaces, isLoading: dbSpaces === undefined };
+}
 
-  return useMemo(() => {
-    if (dbSpaces && dbSpaces.length > 0) {
-      return dbSpaces.map((s: any) => ({
-        id: s._id,
-        name: s.name,
-        type: s.type as any,
-        city: s.city as City,
-        area: s.area,
-        lat: s.lat,
-        lng: s.lng,
-        verified: s.verified,
-        rating: s.rating,
-        reviews: [
-          { who: 'Verified Reviewer', rating: s.rating, text: 'Clean layout, verified amenities.' },
-        ],
-        hours: '10am – 11pm daily',
-        image: s.image,
-        photos: [s.image],
-        about: `${s.name} in ${s.area}, ${s.city}. Capacity: ${s.capacity}.`,
-        safety: 'Security verified by COORDINA.',
-        crowd: (s.crowd as any) || 'Moderate',
-        bookingFrom: 35000,
-        amenities: s.amenities,
-        capacity: s.capacity,
-      }));
-    }
-    return seedSpaces;
-  }, [dbSpaces]);
+export const useAllSpaces = (): Space[] => {
+  return useSpacesQuery().spaces;
 };
 
 export const usePlanItems = (): PlanItem[] => {
-  const cart = useStore((s) => s.cart);
-  const all = useAllEvents();
-  return useMemo(
-    () =>
-      cart.flatMap((l) => {
-        const event = all.find((e) => e.id === l.eventId);
-        const tier = event?.tiers.find((t) => t.id === l.tierId);
-        return event && tier ? [{ event, tier, qty: l.qty }] : [];
-      }),
-    [cart, all],
+  const sessionUserId = useStore((s) => s.sessionUserId);
+  const rows = useQuery(
+    api.cart.getMyCart,
+    sessionUserId ? { userId: sessionUserId as any } : 'skip'
   );
-};
 
+  return useMemo(() => {
+    if (!sessionUserId || !rows) return [];
+    return rows.map((r: any) => ({
+      event: mapConvexEvent(r.event),
+      tier: r.tier,
+      qty: r.qty,
+    }));
+  }, [sessionUserId, rows]);
+};

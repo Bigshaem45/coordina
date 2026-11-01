@@ -1,17 +1,17 @@
 /**
  * COORDINA Paystack Service
- * Powers live checkout (Card, Instant Bank Transfer, USSD)
- * and the Organizer Payouts / Transfers API (NIBSS account resolution & instant disbursements).
+ * Client-side Paystack Inline popup uses VITE_PAYSTACK_PUBLIC_KEY.
+ * Server-side NIBSS resolution & transfers run via /api/paystack using PAYSTACK_SECRET_KEY in Vercel env.
  */
 
-const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '';
-const PAYSTACK_SECRET_KEY = import.meta.env.VITE_PAYSTACK_SECRET_KEY || '';
+const PAYSTACK_PUBLIC_KEY = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '').trim();
 
 export interface PaystackCheckoutOptions {
   email: string;
-  amountKobo: number; // in Kobo (e.g. ₦1,000 = 100000 kobo)
+  amountKobo: number;
   reference: string;
   currency?: string;
+  channels?: string[];
   metadata?: Record<string, unknown>;
   onSuccess: (response: { reference: string; status: string; trans: string; message: string }) => void;
   onCancel?: () => void;
@@ -27,9 +27,10 @@ declare global {
   }
 }
 
-/**
- * Loads the official Paystack Inline script dynamically
- */
+export function isPaystackConfigured(): boolean {
+  return Boolean(PAYSTACK_PUBLIC_KEY);
+}
+
 export function loadPaystackScript(): Promise<boolean> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') return resolve(false);
@@ -46,22 +47,29 @@ export function loadPaystackScript(): Promise<boolean> {
     script.src = 'https://js.paystack.co/v1/inline.js';
     script.async = true;
     script.onload = () => resolve(true);
-    script.onerror = () => {
-      console.warn('Failed to load Paystack Inline JS');
-      resolve(false);
-    };
+    script.onerror = () => resolve(false);
     document.body.appendChild(script);
   });
 }
 
-/**
- * Trigger Paystack Pop checkout modal
- */
-export async function payWithPaystack(opts: PaystackCheckoutOptions): Promise<boolean> {
+export async function payWithPaystack(opts: PaystackCheckoutOptions): Promise<{
+  launched: boolean;
+  error?: string;
+}> {
+  if (!PAYSTACK_PUBLIC_KEY) {
+    return {
+      launched: false,
+      error:
+        'Paystack public key (VITE_PAYSTACK_PUBLIC_KEY) is not configured in environment variables.',
+    };
+  }
+
   const loaded = await loadPaystackScript();
   if (!loaded || !window.PaystackPop) {
-    console.warn('PaystackPop is unavailable, falling back');
-    return false;
+    return {
+      launched: false,
+      error: 'Unable to load Paystack payment gateway. Check your internet connection and retry.',
+    };
   }
 
   const handler = window.PaystackPop.setup({
@@ -71,7 +79,7 @@ export async function payWithPaystack(opts: PaystackCheckoutOptions): Promise<bo
     currency: opts.currency || 'NGN',
     ref: opts.reference,
     metadata: opts.metadata,
-    channels: ['card', 'bank_transfer', 'ussd', 'qr'],
+    channels: opts.channels || ['card', 'bank_transfer', 'ussd', 'qr'],
     callback: (res: any) => {
       opts.onSuccess(res);
     },
@@ -81,12 +89,8 @@ export async function payWithPaystack(opts: PaystackCheckoutOptions): Promise<bo
   });
 
   handler.openIframe();
-  return true;
+  return { launched: true };
 }
-
-// -------------------------------------------------------------
-// PAYSTACK TRANSFERS & NIGERIAN BANKING SUITE (Organizer Payouts)
-// -------------------------------------------------------------
 
 export interface BankInfo {
   name: string;
@@ -110,83 +114,74 @@ export const COMMON_NIGERIAN_BANKS: BankInfo[] = [
   { name: 'Moniepoint Microfinance Bank', code: '50515', slug: 'moniepoint-mfb' },
 ];
 
-/**
- * Resolve a 10-digit NUBAN account number with NIBSS via Paystack API
- */
-export async function resolveAccount(accountNumber: string, bankCode: string): Promise<{
+export async function resolveAccount(
+  accountNumber: string,
+  bankCode: string
+): Promise<{
   success: boolean;
   accountName?: string;
   accountNumber?: string;
   error?: string;
 }> {
   try {
-    const res = await fetch(
-      `https://api.paystack.co/bank/resolve?account_number=${accountNumber.trim()}&bank_code=${bankCode.trim()}`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
+    const res = await fetch('/api/paystack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'resolve_account',
+        accountNumber: accountNumber.trim(),
+        bankCode: bankCode.trim(),
+      }),
+    });
     const data = await res.json();
     if (!res.ok || !data.status) {
-      return { success: false, error: data.message || 'Could not verify account name' };
+      return {
+        success: false,
+        error: data.message || 'Could not resolve NUBAN account with NIBSS.',
+      };
     }
-
     return {
       success: true,
       accountName: data.data.account_name,
       accountNumber: data.data.account_number,
     };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Network error verifying account' };
+    return {
+      success: false,
+      error: err?.message || 'Network error verifying bank account.',
+    };
   }
 }
 
-/**
- * Create a Transfer Recipient on Paystack for instant payouts
- */
 export async function createTransferRecipient(params: {
   name: string;
   accountNumber: string;
   bankCode: string;
 }): Promise<{ success: boolean; recipientCode?: string; error?: string }> {
   try {
-    const res = await fetch('https://api.paystack.co/transferrecipient', {
+    const res = await fetch('/api/paystack', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'nuban',
+        action: 'create_recipient',
         name: params.name,
-        account_number: params.accountNumber.trim(),
-        bank_code: params.bankCode.trim(),
-        currency: 'NGN',
+        accountNumber: params.accountNumber.trim(),
+        bankCode: params.bankCode.trim(),
       }),
     });
-
     const data = await res.json();
     if (!res.ok || !data.status) {
-      return { success: false, error: data.message || 'Failed to create recipient' };
+      return { success: false, error: data.message || 'Failed to register transfer recipient.' };
     }
-
     return {
       success: true,
       recipientCode: data.data.recipient_code,
     };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Network error registering recipient' };
+    return { success: false, error: err?.message || 'Network error registering recipient.' };
   }
 }
 
-/**
- * Initiate an instant Paystack transfer disbursement to an organizer
- */
 export async function initiateTransfer(params: {
   amountNaira: number;
   recipientCode: string;
@@ -195,68 +190,27 @@ export async function initiateTransfer(params: {
 }): Promise<{ success: boolean; transferCode?: string; status?: string; error?: string }> {
   try {
     const ref = params.reference || `TRF-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const res = await fetch('https://api.paystack.co/transfer', {
+    const res = await fetch('/api/paystack', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        source: 'balance',
-        amount: Math.round(params.amountNaira * 100), // convert to kobo
-        recipient: params.recipientCode,
+        action: 'initiate_transfer',
+        amountNaira: params.amountNaira,
+        recipientCode: params.recipientCode,
         reason: params.reason,
         reference: ref,
       }),
     });
-
     const data = await res.json();
     if (!res.ok || !data.status) {
-      return { success: false, error: data.message || 'Transfer failed to dispatch' };
+      return { success: false, error: data.message || 'Transfer failed to dispatch.' };
     }
-
     return {
       success: true,
       transferCode: data.data.transfer_code,
       status: data.data.status,
     };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Network error initiating transfer' };
-  }
-}
-
-/**
- * Fetch current Paystack organization balance in Naira
- */
-export async function getPaystackBalance(): Promise<{
-  success: boolean;
-  balanceNaira: number;
-  currency: string;
-  error?: string;
-}> {
-  try {
-    const res = await fetch('https://api.paystack.co/balance', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    const data = await res.json();
-    if (!res.ok || !data.status) {
-      return { success: false, balanceNaira: 0, currency: 'NGN', error: data.message };
-    }
-
-    const ngnItem = data.data.find((b: any) => b.currency === 'NGN') || data.data[0];
-    const balanceNaira = ngnItem ? ngnItem.balance / 100 : 0;
-
-    return {
-      success: true,
-      balanceNaira,
-      currency: ngnItem?.currency || 'NGN',
-    };
-  } catch (err: any) {
-    return { success: false, balanceNaira: 0, currency: 'NGN', error: err.message };
+    return { success: false, error: err?.message || 'Network error initiating transfer.' };
   }
 }

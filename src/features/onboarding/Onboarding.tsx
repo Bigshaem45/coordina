@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
-import { Button, Chip } from '../../design-system/ui';
+import { Button, Chip, Skeleton } from '../../design-system/ui';
 import { Logo } from '../../design-system/Logo';
-import { CATEGORIES, CATEGORY_PHOTO } from '../../data/mock';
-import { useStore } from '../../store';
+import { CATEGORIES, CATEGORY_PHOTO } from '../../lib/constants';
+import { useAuth } from '../../store';
+import { convex } from '../../lib/convex';
+import { api } from '../../../convex/_generated/api';
+import { toast } from '../../lib/fx';
 import type { Category, City, Vibe } from '../../types';
 
 const VIBES: Vibe[] = ['Chill', 'Energetic', 'Classy', 'Family', 'Creative'];
@@ -16,17 +19,53 @@ export default function Onboarding() {
   const [interests, setInterests] = useState<Category[]>(['Concerts', 'Food']);
   const [budget, setBudget] = useState(50000);
   const [vibe, setVibe] = useState<Vibe>('Energetic');
-  const finish = useStore((s) => s.finishOnboarding);
+  const [saving, setSaving] = useState(false);
+
   const nav = useNavigate();
-  const user = useStore((s) => s.user);
+  const { user, isLoading, sessionUserId } = useAuth();
 
   useEffect(() => {
-    if (!user) nav('/auth', { replace: true });
-  }, [user, nav]);
+    if (!isLoading && !sessionUserId) {
+      nav('/auth', { replace: true });
+    }
+  }, [isLoading, sessionUserId, nav]);
 
-  const complete = () => {
-    finish({ city, interests, budget, vibe });
-    nav('/home', { replace: true });
+  useEffect(() => {
+    if (user) {
+      setCity(user.city || 'Lagos');
+      if (user.interests.length > 0) setInterests(user.interests);
+      if (user.budget) setBudget(user.budget);
+      if (user.vibe) setVibe(user.vibe);
+    }
+  }, [user]);
+
+  if (isLoading || !user) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 px-6 py-12">
+        <Skeleton className="h-12" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
+  const complete = async () => {
+    setSaving(true);
+    try {
+      await convex.mutation(api.auth.finishOnboarding, {
+        userId: user._id as any,
+        city,
+        interests,
+        budget,
+        vibe,
+      });
+      if (user.role === 'organiser') nav('/organiser', { replace: true });
+      else if (user.role === 'venue_manager') nav('/venue-portal', { replace: true });
+      else nav('/home', { replace: true });
+    } catch (err: any) {
+      toast(err?.message || 'Could not save preferences.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const next = () => {
@@ -36,15 +75,24 @@ export default function Onboarding() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-lg flex-col bg-[var(--bg)] px-6 py-8 text-[var(--text)]">
-      {/* Top Bar with Progress Dots & Skip */}
       <div className="mb-8 flex items-center justify-between">
         <Logo size={26} />
-        <div className="flex items-center gap-1.5" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={3}>
+        <div
+          className="flex items-center gap-1.5"
+          role="progressbar"
+          aria-valuenow={step + 1}
+          aria-valuemin={1}
+          aria-valuemax={3}
+        >
           {[0, 1, 2].map((i) => (
             <span
               key={i}
               className={`h-1.5 rounded-full transition-all ${
-                i === step ? 'w-7 bg-brand-500' : i < step ? 'w-3 bg-brand-300' : 'w-3 bg-slate-200 dark:bg-slate-800'
+                i === step
+                  ? 'w-7 bg-brand-500'
+                  : i < step
+                  ? 'w-3 bg-brand-300'
+                  : 'w-3 bg-slate-200 dark:bg-slate-800'
               }`}
             />
           ))}
@@ -61,8 +109,12 @@ export default function Onboarding() {
       <div className="flex-1">
         {step === 0 && (
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Choose your city &amp; interests</h1>
-            <p className="muted mt-1 text-sm">Select your favourite scenes so we can tailor your feed.</p>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+              Choose your city &amp; interests
+            </h1>
+            <p className="muted mt-1 text-sm">
+              Select your favourite scenes so we can tailor your discovery feed.
+            </p>
 
             <div className="mt-5 grid grid-cols-2 gap-2.5">
               {(['Lagos', 'Abuja'] as City[]).map((c) => {
@@ -89,7 +141,6 @@ export default function Onboarding() {
               })}
             </div>
 
-            {/* Evenie-inspired Photographic Interest Grid */}
             <div className="mt-6 grid grid-cols-2 gap-3">
               {CATEGORIES.map((c) => {
                 const active = interests.includes(c);
@@ -97,15 +148,24 @@ export default function Onboarding() {
                   <button
                     key={c}
                     type="button"
-                    onClick={() => setInterests((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]))}
+                    onClick={() =>
+                      setInterests((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]))
+                    }
                     aria-pressed={active}
                     className={`group relative h-28 overflow-hidden rounded-2xl border-2 text-left transition ${
                       active ? 'border-brand-500 ring-2 ring-brand-500/25' : 'border-transparent'
                     }`}
                   >
-                    <img src={CATEGORY_PHOTO[c]} alt={c} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                    <img
+                      src={CATEGORY_PHOTO[c]}
+                      alt={c}
+                      loading="lazy"
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent" />
-                    <span className="absolute bottom-2.5 left-3 text-sm font-semibold text-white">{c}</span>
+                    <span className="absolute bottom-2.5 left-3 text-sm font-semibold text-white">
+                      {c}
+                    </span>
                     {active && (
                       <span className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-brand-500 text-white shadow-sm">
                         <Icon name="check" className="text-sm" />
@@ -121,7 +181,9 @@ export default function Onboarding() {
         {step === 1 && (
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Set a weekend budget</h1>
-            <p className="muted mt-1 text-sm">We will gently flag if your multi-event plan exceeds this limit.</p>
+            <p className="muted mt-1 text-sm">
+              We will gently flag if your multi-event plan exceeds this limit.
+            </p>
 
             <div className="surface mt-6 rounded-2xl p-6 text-center">
               <p className="muted text-xs uppercase tracking-wider">Target Plan Limit</p>
@@ -175,7 +237,9 @@ export default function Onboarding() {
               </div>
             </div>
 
-            <h1 className="mt-6 text-2xl font-bold text-slate-900 dark:text-white">You’re ready for {city}</h1>
+            <h1 className="mt-6 text-2xl font-bold text-slate-900 dark:text-white">
+              You’re ready for {city}
+            </h1>
             <p className="muted mt-1.5 text-sm leading-relaxed">
               Add events to your Plan Cart to detect travel or schedule conflicts automatically, or start a Squad room anytime to vote with friends.
             </p>
@@ -187,7 +251,9 @@ export default function Onboarding() {
               </div>
               <div className="flex justify-between">
                 <span className="muted">Interests</span>
-                <span className="font-medium">{interests.length ? interests.join(', ') : 'All categories'}</span>
+                <span className="font-medium">
+                  {interests.length ? interests.join(', ') : 'All categories'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="muted">Plan budget</span>
@@ -204,8 +270,8 @@ export default function Onboarding() {
             Back
           </Button>
         )}
-        <Button full size="lg" onClick={next}>
-          {step === 2 ? 'Finish & Explore' : 'Continue'}
+        <Button full size="lg" onClick={next} disabled={saving}>
+          {saving ? 'Saving…' : step === 2 ? 'Finish & Explore' : 'Continue'}
         </Button>
       </div>
     </div>

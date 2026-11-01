@@ -1,6 +1,7 @@
 export type Category = 'Concerts' | 'Nightlife' | 'Food' | 'Faith' | 'Tech' | 'Art' | 'Sports' | 'Networking';
 export type City = 'Abuja' | 'Lagos';
 export type Vibe = 'Chill' | 'Energetic' | 'Classy' | 'Family' | 'Creative';
+export type UserRole = 'attendee' | 'organiser' | 'venue_manager' | 'admin';
 
 export type VerificationStatus =
   | 'Coordina Trusted'
@@ -17,14 +18,14 @@ export type RiskLevel = 'Low' | 'Medium' | 'High';
 export interface VerificationDocument {
   id: string;
   name: string;
-  type: 'CAC Certificate' | 'Director Government ID' | 'Venue Booking Agreement' | 'Event Flyer & Lineup' | 'Utility Bill';
+  type: string;
   url: string;
   uploadedAt: string;
   verified: boolean;
 }
 
 export interface RiskAssessment {
-  score: number; // 0 (safest) to 100 (highest risk)
+  score: number;
   level: RiskLevel;
   reasons: string[];
   flags: {
@@ -90,7 +91,13 @@ export interface AuditLog {
   details: string;
 }
 
-export interface Tier { id: string; name: string; price: number; remaining: number; total: number }
+export interface Tier {
+  id: string;
+  name: string;
+  price: number;
+  remaining: number;
+  total: number;
+}
 
 export interface Organiser {
   id: string;
@@ -123,25 +130,29 @@ export interface BlacklistedIdentity {
 export interface Space {
   id: string;
   name: string;
-  type: 'Lounge' | 'Gallery' | 'Beach spot' | 'Co-working café' | 'Rooftop';
+  type: 'Lounge' | 'Gallery' | 'Beach spot' | 'Co-working café' | 'Rooftop' | string;
   city: City;
   area: string;
+  address?: string;
   lat: number;
   lng: number;
   verified: boolean;
   rating: number;
+  reviewCount?: number;
   reviews: { who: string; rating: number; text: string }[];
   hours: string;
   image: string;
   photos: string[];
   about: string;
   safety: string;
-  crowd: 'Quiet' | 'Moderate' | 'Busy';
+  crowd: string;
   bookingFrom: number;
   amenities?: string[];
   bestFor?: string[];
   dressCode?: string;
   capacity?: number;
+  contactPhone?: string;
+  contactEmail?: string;
 }
 
 export interface CEvent {
@@ -152,20 +163,48 @@ export interface CEvent {
   city: City;
   area: string;
   spaceId: string;
+  venueName?: string;
+  address?: string;
   organiserId: string;
+  organiserName?: string;
+  organizerVerified?: boolean;
   start: string;
-  end: string; // ISO
+  end: string;
   image: string;
   description: string;
   tiers: Tier[];
   lat: number;
   lng: number;
+  status?: string;
+  rating?: number;
+  reviewCount?: number;
+  reportCount?: number;
+  expectedAttendance?: number;
   verificationStatus?: VerificationStatus;
 }
 
 export interface Ticket {
-  id: string; eventId: string; tierId: string; tierName: string; price: number;
-  owner: string; used: boolean; refundRequested?: boolean; orderId: string;
+  id: string;
+  ticketCode: string;
+  qrHash: string;
+  eventId: string;
+  eventTitle: string;
+  venueName: string;
+  city: City;
+  area: string;
+  start: string;
+  end: string;
+  image: string;
+  tierId: string;
+  tierName: string;
+  price: number;
+  owner: string;
+  used: boolean;
+  checkedInAt?: number;
+  refundRequested?: boolean;
+  transferredToName?: string;
+  wasTransferredAway?: boolean;
+  orderId: string;
 }
 
 export interface Clash {
@@ -175,4 +214,3 @@ export interface Clash {
   message: string;
   severity: 'warn' | 'info';
 }
-

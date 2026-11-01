@@ -13,14 +13,8 @@ export function VerificationBadge({
   showDetails?: boolean;
 }) {
   const [popover, setPopover] = useState(false);
-  const currentStatus = status ?? 'Event Verified';
-  const meta = getVerificationMeta(currentStatus) || {
-    label: 'Event Verified',
-    icon: 'verified',
-    bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-    dot: 'bg-emerald-500',
-    desc: 'Verified event on the COORDINA network.',
-  };
+  const currentStatus: VerificationStatus = status ?? 'Unverified';
+  const meta = getVerificationMeta(currentStatus);
 
   const sizeClasses = {
     sm: 'text-[10px] px-2 py-0.5 gap-1',
@@ -51,7 +45,6 @@ export function VerificationBadge({
         <span>{meta.label}</span>
       </button>
 
-      {/* Trust Guarantee Explainer Popover */}
       {(popover || showDetails) && (
         <div
           role="dialog"
@@ -76,11 +69,10 @@ export function VerificationBadge({
             {meta.desc}
           </p>
           <div className="mt-2.5 rounded-lg bg-slate-50 p-2 text-[10px] text-slate-500 dark:bg-midnight-950 dark:text-slate-400">
-            Guaranteed under COORDINA Remote Verification Engine. No ghost tickets, verified venues only.
+            Powered by COORDINA Remote Verification &amp; Venue Token Confirmation.
           </div>
         </div>
       )}
     </div>
   );
 }
-

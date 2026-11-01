@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from '../../design-system/Icon';
 import { Badge, BottomSheet, Button, Card, Cover, EmptyState } from '../../design-system/ui';
-import { useAllEvents, usePlanItems, useStore } from '../../store';
+import { useAllEvents, useAuth, usePlanItems, useStore } from '../../store';
 import { bestOrder, detectClashes, suggestAlternative } from '../../lib/clash';
 import { computeFees, dayKey, fmtDate, fmtTime, naira } from '../../lib/format';
 import type { Clash, CEvent } from '../../types';
@@ -28,20 +28,27 @@ export default function PlanCart() {
   const items = usePlanItems();
   const all = useAllEvents();
   const nav = useNavigate();
-  const user = useStore((s) => s.user);
-  const budget = useStore((s) => s.budget);
+  const { user } = useAuth();
+  const budget = user?.budget ?? 100000;
   const setBudget = useStore((s) => s.setBudget);
   const remove = useStore((s) => s.removeFromCart);
   const setQty = useStore((s) => s.setQty);
   const swap = useStore((s) => s.swapInCart);
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const [kept, setKept] = useState<string[]>([]);
   const [sheet, setSheet] = useState<{ clash: Clash; mode: 'swap' | 'alt' } | null>(null);
   const [editBudget, setEditBudget] = useState(false);
+  const [draftBudget, setDraftBudget] = useState<number | null>(null);
 
   const handleProceedToCheckout = () => {
     if (!user) {
       toast('Please log in to checkout your plan.');
-      nav(`/auth?mode=signin&redirect=/checkout`);
+      nav('/auth?mode=signin&redirect=/checkout');
+      return;
+    }
+    if (!user.emailVerified) {
+      toast('Please verify your email address before checkout.');
+      setVerifyModalOpen(true);
       return;
     }
     nav('/checkout');
@@ -65,6 +72,24 @@ export default function PlanCart() {
   const hardOpen = active.some((c) => c.type === 'hard');
   const pct = budget > 0 ? Math.min(100, Math.round((fees.total / budget) * 100)) : 0;
 
+  if (!user) {
+    return (
+      <div className="px-4 py-6 md:px-0">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Your Plan</h1>
+        <EmptyState
+          icon="lock"
+          title="Sign in to build your itinerary"
+          text="Your saved events, budget limits, and smart clash detection are synced securely to your COORDINA account."
+          action={
+            <Link to="/auth?mode=signin&redirect=/plan">
+              <Button>Log In to Continue</Button>
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className="px-4 py-6 md:px-0">
@@ -84,6 +109,7 @@ export default function PlanCart() {
   }
 
   const eventOf = (id: string) => items.find((i) => i.event.id === id)?.event;
+  const currentSliderBudget = draftBudget ?? budget;
 
   return (
     <div className="px-4 py-5 pb-36 md:px-0 md:pb-12">
@@ -91,7 +117,7 @@ export default function PlanCart() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Your Plan</h1>
           <p className="muted text-xs">
-            {items.length} event{items.length > 1 ? 's' : ''} · Chronological itinerary
+            {items.length} event{items.length > 1 ? 's' : ''} · Synced to {user.name}
           </p>
         </div>
         <Link to="/squad">
@@ -102,7 +128,6 @@ export default function PlanCart() {
       </div>
 
       <div className="mt-5 grid gap-6 md:grid-cols-12">
-        {/* Left: Clash Alerts + Day-by-Day Timeline */}
         <div className="space-y-5 md:col-span-7">
           {/* Budget Bar Card */}
           <Card className="p-4">
@@ -110,7 +135,10 @@ export default function PlanCart() {
               <span className="muted font-medium">Budget usage</span>
               <button
                 type="button"
-                onClick={() => setEditBudget(true)}
+                onClick={() => {
+                  setDraftBudget(budget);
+                  setEditBudget(true);
+                }}
                 className="inline-flex items-center gap-1 font-semibold text-slate-900 hover:text-brand-500 dark:text-white"
               >
                 <span className={over ? 'text-coral-500' : ''}>{naira(fees.total)}</span>
@@ -120,13 +148,15 @@ export default function PlanCart() {
             </div>
             <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
               <div
-                className={`h-full rounded-full transition-all ${over ? 'bg-coral-500' : 'bg-brand-500'}`}
+                className={`h-full rounded-full transition-all ${
+                  over ? 'bg-coral-500' : 'bg-brand-500'
+                }`}
                 style={{ width: `${pct}%` }}
               />
             </div>
           </Card>
 
-          {/* Minimalist Clash Resolution Cards */}
+          {/* Clash Resolution Cards */}
           {active.length > 0 ? (
             <div className="space-y-3" aria-live="polite">
               <AnimatePresence>
@@ -154,8 +184,12 @@ export default function PlanCart() {
                         <Icon name={ICON[c.type]} className="text-lg" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-slate-900 dark:text-white">{TITLE[c.type]}</p>
-                        <p className="mt-0.5 text-xs leading-relaxed text-slate-700 dark:text-slate-300">{c.message}</p>
+                        <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                          {TITLE[c.type]}
+                        </p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-slate-700 dark:text-slate-300">
+                          {c.message}
+                        </p>
 
                         <div className="mt-3 flex flex-wrap gap-2">
                           {(c.type === 'hard' || c.type === 'travel') && (
@@ -170,35 +204,63 @@ export default function PlanCart() {
                               >
                                 Keep both
                               </Button>
-                              <Button size="sm" variant="outline" onClick={() => setSheet({ clash: c, mode: 'swap' })}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSheet({ clash: c, mode: 'swap' })}
+                              >
                                 Remove one
                               </Button>
-                              <Button size="sm" onClick={() => setSheet({ clash: c, mode: 'alt' })}>
+                              <Button
+                                size="sm"
+                                onClick={() => setSheet({ clash: c, mode: 'alt' })}
+                              >
                                 Suggest alternative
                               </Button>
                             </>
                           )}
                           {c.type === 'budget' && (
                             <>
-                              <Button size="sm" variant="outline" onClick={() => setEditBudget(true)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setDraftBudget(budget);
+                                  setEditBudget(true);
+                                }}
+                              >
                                 Adjust budget
                               </Button>
-                              <Button size="sm" onClick={() => setSheet({ clash: c, mode: 'swap' })}>
+                              <Button
+                                size="sm"
+                                onClick={() => setSheet({ clash: c, mode: 'swap' })}
+                              >
                                 Remove an event
                               </Button>
                             </>
                           )}
                           {c.type === 'soldout' && (
-                            <Button size="sm" variant="outline" onClick={() => setKept([...kept, c.id])}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setKept([...kept, c.id])}
+                            >
                               Dismiss
                             </Button>
                           )}
                           {c.type === 'fatigue' && (
                             <>
-                              <Button size="sm" variant="outline" onClick={() => setKept([...kept, c.id])}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setKept([...kept, c.id])}
+                              >
                                 Keep lineup
                               </Button>
-                              <Button size="sm" onClick={() => setSheet({ clash: c, mode: 'swap' })}>
+                              <Button
+                                size="sm"
+                                onClick={() => setSheet({ clash: c, mode: 'swap' })}
+                              >
                                 Drop one
                               </Button>
                             </>
@@ -222,11 +284,17 @@ export default function PlanCart() {
             {days.map((d) => (
               <section key={dayKey(d[0].event.start)}>
                 <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-brand-500">
-                  {fmtDate(d[0].event.start, { weekday: 'long', day: 'numeric', month: 'short' })}
+                  {fmtDate(d[0].event.start, {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'short',
+                  })}
                 </h2>
                 <ol className="relative space-y-3 border-l border-slate-200 pl-5 dark:border-slate-800">
                   {d.map((i) => {
-                    const hasClash = active.some((c) => c.eventIds.includes(i.event.id) && c.type !== 'soldout');
+                    const hasClash = active.some(
+                      (c) => c.eventIds.includes(i.event.id) && c.type !== 'soldout'
+                    );
                     return (
                       <li key={i.event.id} className="relative">
                         <span
@@ -236,7 +304,11 @@ export default function PlanCart() {
                         />
                         <Card className="flex items-center gap-3.5 p-3">
                           <Link to={`/event/${i.event.id}`} className="shrink-0">
-                            <Cover gradient={i.event.image} category={i.event.category} className="h-20 w-20 rounded-xl" />
+                            <Cover
+                              gradient={i.event.image}
+                              category={i.event.category}
+                              className="h-20 w-20 rounded-xl"
+                            />
                           </Link>
                           <div className="min-w-0 flex-1">
                             <p className="muted text-xs">
@@ -255,7 +327,11 @@ export default function PlanCart() {
                                   type="button"
                                   className="px-1 text-slate-500 hover:text-slate-900 dark:hover:text-white"
                                   aria-label="Fewer tickets"
-                                  onClick={() => setQty(i.event.id, i.qty - 1)}
+                                  onClick={() =>
+                                    i.qty <= 1
+                                      ? remove(i.event.id)
+                                      : setQty(i.event.id, i.qty - 1)
+                                  }
                                 >
                                   −
                                 </button>
@@ -295,14 +371,18 @@ export default function PlanCart() {
         {/* Right Column: Order Summary Card */}
         <div className="md:col-span-5">
           <Card className="p-5 md:sticky md:top-22">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Order Summary</h3>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Order Summary
+            </h3>
             <div className="mt-3 space-y-2 text-xs">
               {ordered.map((i) => (
                 <div key={i.event.id} className="flex justify-between gap-2">
                   <span className="muted truncate">
                     {i.event.title} × {i.qty}
                   </span>
-                  <span className="font-medium text-slate-800 dark:text-slate-200">{naira(i.tier.price * i.qty)}</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                    {naira(i.tier.price * i.qty)}
+                  </span>
                 </div>
               ))}
               <hr className="my-2 border-[var(--border)]" />
@@ -336,22 +416,48 @@ export default function PlanCart() {
               </div>
             </div>
 
-            <Button full size="lg" className="mt-5 hidden md:inline-flex" onClick={handleProceedToCheckout}>
-              {!user ? 'Log In to Checkout' : hardOpen ? 'Proceed Anyway' : `Checkout · ${naira(fees.total)}`}
+            {!user.emailVerified && (
+              <div className="mt-4 rounded-xl border border-amber-400/50 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                <p className="font-semibold">Email Verification Required</p>
+                <p className="mt-0.5 text-[11px]">
+                  Verify your email address before completing ticket checkout.
+                </p>
+              </div>
+            )}
+
+            <Button
+              full
+              size="lg"
+              className="mt-5 hidden md:inline-flex"
+              onClick={handleProceedToCheckout}
+            >
+              {!user.emailVerified
+                ? 'Verify Email to Checkout'
+                : hardOpen
+                  ? 'Proceed Anyway'
+                  : `Checkout · ${naira(fees.total)}`}
             </Button>
           </Card>
         </div>
       </div>
 
-      {/* Mobile Sticky Bar positioned cleanly above the mobile tab bar + safe area */}
+      {/* Mobile Sticky Bar */}
       <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-30 border-t border-[var(--border)] bg-white/95 px-4 py-3 backdrop-blur-xl dark:bg-midnight-900/95 md:hidden">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
-            <p className="muted text-[11px]">{items.length} event{items.length > 1 ? 's' : ''}</p>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{naira(fees.total)}</p>
+            <p className="muted text-[11px]">
+              {items.length} event{items.length > 1 ? 's' : ''}
+            </p>
+            <p className="text-base font-bold text-slate-900 dark:text-white">
+              {naira(fees.total)}
+            </p>
           </div>
           <Button size="lg" className="px-7" onClick={handleProceedToCheckout}>
-            {!user ? 'Log In to Checkout' : hardOpen ? 'Checkout Anyway' : 'Checkout'}
+            {!user.emailVerified
+              ? 'Verify Email'
+              : hardOpen
+                ? 'Checkout Anyway'
+                : 'Checkout'}
           </Button>
         </div>
       </div>
@@ -381,19 +487,33 @@ export default function PlanCart() {
         )}
       </BottomSheet>
 
-      <BottomSheet open={editBudget} onClose={() => setEditBudget(false)} title="Adjust Plan Budget">
-        <p className="text-center text-3xl font-bold text-brand-500">{naira(budget)}</p>
+      <BottomSheet
+        open={editBudget}
+        onClose={() => setEditBudget(false)}
+        title="Adjust Plan Budget"
+      >
+        <p className="text-center text-3xl font-bold text-brand-500">
+          {naira(currentSliderBudget)}
+        </p>
         <input
           type="range"
           min={5000}
           max={500000}
           step={5000}
-          value={budget}
-          onChange={(e) => setBudget(+e.target.value)}
+          value={currentSliderBudget}
+          onChange={(e) => setDraftBudget(+e.target.value)}
           className="my-5 h-2 w-full cursor-pointer accent-[#4F46E5]"
           aria-label="Budget"
         />
-        <Button full size="lg" onClick={() => setEditBudget(false)}>
+        <Button
+          full
+          size="lg"
+          onClick={async () => {
+            await setBudget(currentSliderBudget);
+            setEditBudget(false);
+            toast('Plan budget updated');
+          }}
+        >
           Save Budget
         </Button>
       </BottomSheet>
@@ -418,7 +538,9 @@ function SheetBody({
   onRemove: (id: string) => void;
   onSwap: (o: string, n: string) => void;
 }) {
-  const ids = sheet.clash.eventIds.length ? sheet.clash.eventIds : items.map((i) => i.event.id);
+  const ids = sheet.clash.eventIds.length
+    ? sheet.clash.eventIds
+    : items.map((i) => i.event.id);
   if (sheet.mode === 'swap') {
     return (
       <div className="space-y-2.5">
@@ -432,7 +554,9 @@ function SheetBody({
               className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3.5 text-left hover:border-coral-400"
             >
               <span className="min-w-0 flex-1">
-                <strong className="block truncate text-sm text-slate-900 dark:text-white">{e.title}</strong>
+                <strong className="block truncate text-sm text-slate-900 dark:text-white">
+                  {e.title}
+                </strong>
                 <span className="muted text-xs">
                   {fmtDate(e.start)} · {fmtTime(e.start)} · {e.area}
                 </span>
@@ -448,21 +572,35 @@ function SheetBody({
   const target = eventOf(ids[ids.length - 1]);
   const alt = target && suggestAlternative(target, items, all, budget);
   if (!target || !alt) {
-    return <p className="muted text-sm">No conflict-free alternative with a matching vibe right now. Try removing one manually.</p>;
+    return (
+      <p className="muted text-sm">
+        No conflict-free alternative with a matching vibe right now. Try removing one manually.
+      </p>
+    );
   }
   return (
     <div>
       <p className="muted mb-3 text-xs leading-relaxed">
-        Replace <strong className="text-slate-900 dark:text-white">{target.title}</strong> with a conflict-free {alt.vibe.toLowerCase()} option:
+        Replace{' '}
+        <strong className="text-slate-900 dark:text-white">{target.title}</strong> with a
+        conflict-free {alt.vibe.toLowerCase()} option:
       </p>
       <Card className="flex items-center gap-3.5 p-3">
-        <Cover gradient={alt.image} category={alt.category} className="h-20 w-20 shrink-0 rounded-xl" />
+        <Cover
+          gradient={alt.image}
+          category={alt.category}
+          className="h-20 w-20 shrink-0 rounded-xl"
+        />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{alt.title}</p>
+          <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+            {alt.title}
+          </p>
           <p className="muted text-xs">
             {fmtDate(alt.start)} · {fmtTime(alt.start)} · {alt.area}
           </p>
-          <p className="mt-1 text-xs font-semibold text-brand-500">{naira(Math.min(...alt.tiers.map((t) => t.price)))}</p>
+          <p className="mt-1 text-xs font-semibold text-brand-500">
+            {naira(Math.min(...alt.tiers.map((t) => t.price)))}
+          </p>
         </div>
       </Card>
       <Button full size="lg" className="mt-4" onClick={() => onSwap(target.id, alt.id)}>

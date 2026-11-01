@@ -2,27 +2,34 @@ import { useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
 import type { CEvent } from '../../types';
-import { getSpace, minPrice } from '../../data/mock';
+import { minPrice } from '../../lib/constants';
 import { Cover } from '../../design-system/ui';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { fmtDate, fmtTime, naira } from '../../lib/format';
-import { useStore, useAllSpaces } from '../../store';
+import { useStore, useAuth, useAllSpaces, usePlanItems } from '../../store';
 import { flyToCart, toast } from '../../lib/fx';
 
 export function useAddToPlan() {
   const addToCart = useStore((s) => s.addToCart);
-  const user = useStore((s) => s.user);
+  const { user } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
 
-  return (e: CEvent, from?: DOMRect, tierId?: string, qty = 1) => {
+  return async (e: CEvent, from?: DOMRect, tierId?: string, qty = 1) => {
     if (!user) {
       toast('Please log in to add events to your plan.');
       nav(`/auth?mode=signin&redirect=${encodeURIComponent(loc.pathname + loc.search)}`);
       return;
     }
-    const tier = e.tiers.find((t) => t.id === tierId) ?? e.tiers.find((t) => t.remaining > 0) ?? e.tiers[0];
-    addToCart({ eventId: e.id, tierId: tier.id, qty });
+    const tier =
+      e.tiers.find((t) => t.id === tierId) ??
+      e.tiers.find((t) => t.remaining > 0) ??
+      e.tiers[0];
+    if (!tier || tier.remaining <= 0) {
+      toast('This ticket tier is currently sold out.');
+      return;
+    }
+    await addToCart({ eventId: e.id, tierId: tier.id, qty });
     if (from) flyToCart(from, e.image);
     toast(`Added to plan: ${e.title}`);
   };
@@ -38,10 +45,12 @@ export function EventCard({
   variant?: 'card' | 'row';
 }) {
   const add = useAddToPlan();
-  const inCart = useStore((s) => s.cart.some((c) => c.eventId === event.id));
+  const planItems = usePlanItems();
+  const inCart = planItems.some((p) => p.event.id === event.id);
   const ref = useRef<HTMLDivElement>(null);
   const allSpaces = useAllSpaces();
-  const sp = allSpaces.find((s) => s.id === event.spaceId) ?? getSpace(event.spaceId);
+  const sp = allSpaces.find((s) => s.id === event.spaceId);
+  const venueLabel = event.venueName || sp?.name || event.area;
   const low = event.tiers.some((t) => t.remaining > 0 && t.remaining <= 10);
   const p = minPrice(event);
   const d = new Date(event.start);
@@ -50,25 +59,39 @@ export function EventCard({
 
   if (variant === 'row') {
     return (
-      <div ref={ref} className="surface group flex w-full min-w-0 items-center gap-3.5 rounded-2xl p-3 shadow-card transition hover:border-brand-300">
+      <div
+        ref={ref}
+        className="surface group flex w-full min-w-0 items-center gap-3.5 rounded-2xl p-3 shadow-card transition hover:border-brand-300"
+      >
         <Link to={`/event/${event.id}`} className="shrink-0">
-          <Cover gradient={event.image} category={event.category} className="h-20 w-20 rounded-xl" label={event.title} />
+          <Cover
+            gradient={event.image}
+            category={event.category}
+            className="h-20 w-20 rounded-xl"
+            label={event.title}
+          />
         </Link>
         <Link to={`/event/${event.id}`} className="min-w-0 flex-1 overflow-hidden">
           <p className="truncate text-xs font-medium text-brand-500">
             {fmtDate(event.start)} · {fmtTime(event.start)}
           </p>
-          <h3 className="mt-0.5 truncate text-sm font-semibold text-slate-900 dark:text-white">{event.title}</h3>
+          <h3 className="mt-0.5 truncate text-sm font-semibold text-slate-900 dark:text-white">
+            {event.title}
+          </h3>
           <p className="muted mt-1 flex items-center gap-1 truncate text-xs">
             <Icon name="location_on" className="shrink-0 text-[14px] text-slate-400" />
-            <span className="truncate">{sp?.name ?? event.area}, {event.area}</span>
-            {sp?.verified && <Icon name="verified" filled className="shrink-0 text-[13px] text-neon-500" />}
+            <span className="truncate">
+              {venueLabel}, {event.area}
+            </span>
+            {sp?.verified && (
+              <Icon name="verified" filled className="shrink-0 text-[13px] text-neon-500" />
+            )}
           </p>
           <div className="mt-1 flex items-center gap-2">
             <span className="shrink-0 text-xs font-semibold text-slate-800 dark:text-slate-200">
               {p === 0 ? 'Free' : naira(p)}
             </span>
-            <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />
+            <VerificationBadge status={event.verificationStatus ?? 'Unverified'} size="sm" />
           </div>
         </Link>
         <button
@@ -96,7 +119,12 @@ export function EventCard({
       }`}
     >
       <Link to={`/event/${event.id}`} className="relative block">
-        <Cover gradient={event.image} category={event.category} className="h-44" label={`${event.title} cover`} />
+        <Cover
+          gradient={event.image}
+          category={event.category}
+          className="h-44"
+          label={`${event.title} cover`}
+        />
         <span className="absolute left-3 top-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-xs">
           {p === 0 ? 'Free' : naira(p)}
         </span>
@@ -115,22 +143,30 @@ export function EventCard({
         <Link to={`/event/${event.id}`} className="flex gap-3">
           <div className="flex w-9 shrink-0 flex-col items-center pt-0.5 text-center">
             <span className="text-[10px] font-semibold tracking-wider text-brand-500">{mon}</span>
-            <span className="text-lg font-bold leading-tight text-slate-900 dark:text-white">{day}</span>
+            <span className="text-lg font-bold leading-tight text-slate-900 dark:text-white">
+              {day}
+            </span>
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">{event.title}</h3>
+            <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+              {event.title}
+            </h3>
             <p className="muted mt-0.5 text-xs">{fmtTime(event.start)}</p>
             <p className="muted mt-1 flex items-center gap-1 truncate text-xs">
-              <Icon name="location_on" className="text-[14px] shrink-0 text-slate-400" />
-              <span className="truncate">{sp?.name ?? event.area}, {event.area}</span>
-              {sp?.verified && <Icon name="verified" filled className="text-[13px] shrink-0 text-neon-500" />}
+              <Icon name="location_on" className="shrink-0 text-[14px] text-slate-400" />
+              <span className="truncate">
+                {venueLabel}, {event.area}
+              </span>
+              {sp?.verified && (
+                <Icon name="verified" filled className="shrink-0 text-[13px] text-neon-500" />
+              )}
             </p>
           </div>
         </Link>
 
         <div className="mt-3.5 flex items-center justify-between border-t border-[var(--border)] pt-3">
           <div className="flex items-center gap-1.5 truncate">
-            <VerificationBadge status={event.verificationStatus ?? 'Event Verified'} size="sm" />
+            <VerificationBadge status={event.verificationStatus ?? 'Unverified'} size="sm" />
           </div>
           <button
             type="button"

@@ -5,10 +5,6 @@ export const RISK_THRESHOLDS = {
   MEDIUM: 65,
 };
 
-/**
- * Rule-based Risk Assessment Engine for Remote Event Verification
- * Calculates a fraud risk score from 0 (safest) to 100 (highest risk).
- */
 export function calculateRiskAssessment(params: {
   isNewOrganizer: boolean;
   hasCacNumber: boolean;
@@ -34,7 +30,6 @@ export function calculateRiskAssessment(params: {
     missingDocumentation: false,
   };
 
-  // 1. Organizer Credentials
   if (!params.hasCacNumber || !params.isBvnNinVerified) {
     score += 30;
     flags.missingDocumentation = true;
@@ -54,7 +49,6 @@ export function calculateRiskAssessment(params: {
     reasons.push(`Low historical organizer trust rating (${params.organizerTrustScore}/5.0)`);
   }
 
-  // 2. Venue Existence & Direct Confirmation
   if (!params.isVenueConfirmed) {
     score += 25;
     flags.unverifiedVenue = true;
@@ -69,21 +63,18 @@ export function calculateRiskAssessment(params: {
     reasons.push('No written venue lease/receipt or authorization agreement attached');
   }
 
-  // 3. Pricing & Ticket Values
   if (params.maxTicketPrice >= 50000) {
     score += 10;
     flags.highTicketValue = true;
     reasons.push(`High-value ticket tiers detected (up to ₦${params.maxTicketPrice.toLocaleString()})`);
   }
 
-  // 4. Time Window & Short Notice
   if (hoursUntilEvent > 0 && hoursUntilEvent < 72) {
     score += 15;
     flags.shortNotice = true;
     reasons.push(`Submitted on short notice (${Math.round(hoursUntilEvent)} hours before event start)`);
   }
 
-  // Clamp score between 0 and 100
   const finalScore = Math.min(100, Math.max(5, score));
 
   let level: RiskLevel = 'Low';
@@ -101,7 +92,7 @@ export function calculateRiskAssessment(params: {
   };
 }
 
-/** Status badge styling and iconography configuration */
+/** Honest status badge styling — Unverified events are boldly marked Unverified */
 export function getVerificationMeta(status?: VerificationStatus | string | null) {
   switch (status) {
     case 'Coordina Trusted':
@@ -111,7 +102,7 @@ export function getVerificationMeta(status?: VerificationStatus | string | null)
         tone: 'neon' as const,
         bg: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/30',
         dot: 'bg-indigo-500',
-        desc: 'Official COORDINA flagship partnership with verified physical presence and premium ticket escrow.',
+        desc: 'Official COORDINA flagship trust badge: KYC, camera biometric liveness, and direct venue confirmation completed.',
       };
     case 'Event Verified':
       return {
@@ -120,25 +111,25 @@ export function getVerificationMeta(status?: VerificationStatus | string | null)
         tone: 'neon' as const,
         bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
         dot: 'bg-emerald-500',
-        desc: 'Organizer credentials, event flyer, and independent venue booking have been reviewed and verified by COORDINA officers.',
+        desc: 'Organizer credentials, event flyer, and supporting documentation have been verified by COORDINA compliance officers.',
       };
     case 'Venue Confirmed':
       return {
         label: 'Venue Confirmed',
         icon: 'storefront',
         tone: 'amber' as const,
-        bg: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
-        dot: 'bg-amber-500',
-        desc: 'Venue management confirmed the event reservation directly via verified portal link.',
+        bg: 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30',
+        dot: 'bg-sky-500',
+        desc: 'Venue management confirmed the event reservation directly via COORDINA remote token.',
       };
     case 'Organizer Verified':
       return {
         label: 'Organizer Verified',
         icon: 'badge',
         tone: 'brand' as const,
-        bg: 'bg-brand-500/15 text-brand-600 dark:text-brand-400 border-brand-500/30',
-        dot: 'bg-brand-500',
-        desc: 'Organizer identity, CAC company number, and phone OTP have been validated.',
+        bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+        dot: 'bg-emerald-500',
+        desc: 'Organizer identity, CAC registration, and director liveness have been validated.',
       };
     case 'Verification Pending':
     case 'pending':
@@ -146,8 +137,8 @@ export function getVerificationMeta(status?: VerificationStatus | string | null)
         label: 'Verification Pending',
         icon: 'hourglass_empty',
         tone: 'slate' as const,
-        bg: 'bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/30',
-        dot: 'bg-slate-400',
+        bg: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35',
+        dot: 'bg-amber-500',
         desc: 'Under active review by COORDINA compliance officers and awaiting venue confirmation.',
       };
     case 'Verification Rejected':
@@ -167,17 +158,17 @@ export function getVerificationMeta(status?: VerificationStatus | string | null)
         tone: 'coral' as const,
         bg: 'bg-red-950/20 text-red-600 dark:text-red-400 border-red-500/40',
         dot: 'bg-red-600',
-        desc: 'Event temporarily frozen following community fraud alerts or venue cancellation.',
+        desc: 'Event suspended following compliance review or venue dispute.',
       };
     case 'Unverified':
     default:
       return {
-        label: status && status !== 'Unverified' ? status : 'Event Verified',
-        icon: 'verified',
-        tone: 'neon' as const,
-        bg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
-        dot: 'bg-emerald-500',
-        desc: 'Verified event on the COORDINA network.',
+        label: 'Unverified',
+        icon: 'gpp_maybe',
+        tone: 'amber' as const,
+        bg: 'bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/45',
+        dot: 'bg-amber-500',
+        desc: 'This event has not yet completed COORDINA remote KYC and venue confirmation.',
       };
   }
 }

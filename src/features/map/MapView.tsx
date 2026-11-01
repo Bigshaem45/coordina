@@ -4,9 +4,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Link } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
-import { AREAS, CATEGORY_ICON, minPrice } from '../../data/mock';
+import { AREAS, CATEGORY_ICON, minPrice } from '../../lib/constants';
 import { Chip } from '../../design-system/ui';
-import { useAllEvents, useStore } from '../../store';
+import { useActiveCity, useAllEvents } from '../../store';
 import { fmtTime, naira } from '../../lib/format';
 import { useAddToPlan } from '../discover/EventCard';
 
@@ -30,7 +30,7 @@ function FlyTo({ lat, lng, zoom }: { lat: number; lng: number; zoom: number }) {
 }
 
 export default function MapView() {
-  const city = useStore((s) => s.city);
+  const city = useActiveCity();
   const all = useAllEvents().filter((e) => e.city === city);
   const [now, setNow] = useState(false);
   const [area, setArea] = useState<string | null>(null);
@@ -38,9 +38,13 @@ export default function MapView() {
   const areas = Object.keys(AREAS).filter((a) => AREAS[a].city === city);
   const t = Date.now();
   const list = all.filter(
-    (e) => (!now || (+new Date(e.start) <= t && +new Date(e.end) >= t)) && (!area || e.area === area),
+    (e) =>
+      (!now || (+new Date(e.start) <= t && +new Date(e.end) >= t)) &&
+      (!area || e.area === area)
   );
-  const centre = area ? AREAS[area] : { lat: city === 'Abuja' ? 9.06 : 6.52, lng: city === 'Abuja' ? 7.46 : 3.38 };
+  const centre = area
+    ? AREAS[area]
+    : { lat: city === 'Abuja' ? 9.06 : 6.52, lng: city === 'Abuja' ? 7.46 : 3.38 };
   const zoom = area ? 14 : city === 'Abuja' ? 12 : 11;
 
   return (
@@ -48,7 +52,12 @@ export default function MapView() {
       <div className="space-y-2 px-4 py-3 md:px-0 md:pt-0">
         <div className="no-scrollbar flex items-center gap-2 overflow-x-auto pb-1">
           <Chip active={now} onClick={() => setNow(!now)}>
-            <Icon name="fiber_manual_record" filled className={now ? 'text-white' : 'text-coral-500'} /> Happening now
+            <Icon
+              name="fiber_manual_record"
+              filled
+              className={now ? 'text-white' : 'text-coral-500'}
+            />{' '}
+            Happening now
           </Chip>
           <Chip active={!area} onClick={() => setArea(null)}>
             All {city}
@@ -60,25 +69,46 @@ export default function MapView() {
           ))}
         </div>
         {now && list.length === 0 && (
-          <p className="muted text-xs">Nothing is live right this minute. Turn off “Happening now” to browse upcoming pins.</p>
+          <p className="muted text-xs">
+            Nothing is live right this minute. Turn off “Happening now” to browse upcoming pins.
+          </p>
         )}
       </div>
 
       <div className="relative flex-1 overflow-hidden border-y border-slate-200 dark:border-slate-800 md:rounded-2xl md:border">
-        <MapContainer center={[centre.lat, centre.lng]} zoom={zoom} className="h-full w-full z-0" scrollWheelZoom>
-          <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapContainer
+          center={[centre.lat, centre.lng]}
+          zoom={zoom}
+          className="z-0 h-full w-full"
+          scrollWheelZoom
+        >
+          <TileLayer
+            attribution="&copy; OpenStreetMap"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
           <FlyTo lat={centre.lat} lng={centre.lng} zoom={zoom} />
           {list.map((e) => {
             const live = +new Date(e.start) <= t && +new Date(e.end) >= t;
             return (
-              <Marker key={e.id} position={[e.lat, e.lng]} icon={pin(CATEGORY_ICON[e.category], live)}>
+              <Marker
+                key={e.id}
+                position={[e.lat, e.lng]}
+                icon={pin(CATEGORY_ICON[e.category], live)}
+              >
                 <Popup>
                   <div className="w-48 space-y-2 text-slate-900">
                     {e.image.startsWith('http') && (
-                      <img src={e.image} alt={e.title} className="h-24 w-full rounded-lg object-cover" loading="lazy" />
+                      <img
+                        src={e.image}
+                        alt={e.title}
+                        className="h-24 w-full rounded-lg object-cover"
+                        loading="lazy"
+                      />
                     )}
                     <div>
-                      <p className="text-sm font-semibold leading-snug text-slate-900">{e.title}</p>
+                      <p className="text-sm font-semibold leading-snug text-slate-900">
+                        {e.title}
+                      </p>
                       <p className="mt-0.5 text-xs text-slate-500">
                         {fmtTime(e.start)} · {e.area}
                       </p>

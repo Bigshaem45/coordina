@@ -1,9 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { Icon } from '../../design-system/Icon';
-import { CATEGORIES, CATEGORY_ICON, minPrice, AREAS } from '../../data/mock';
-import { BottomSheet, Button, Chip, EmptyState, Cover, Stars, VerifiedBadge } from '../../design-system/ui';
-import { useAllEvents, useAllSpaces, useStore } from '../../store';
+import { CATEGORIES, CATEGORY_ICON, minPrice, AREAS } from '../../lib/constants';
+import {
+  BottomSheet,
+  Button,
+  Chip,
+  EmptyState,
+  Cover,
+  Stars,
+  VerifiedBadge,
+  SkeletonCard,
+} from '../../design-system/ui';
+import { useActiveCity, useEventsQuery, useSpacesQuery, useStore } from '../../store';
 import { bucket, naira } from '../../lib/format';
 import { EventCard } from './EventCard';
 import type { Category, Vibe } from '../../types';
@@ -23,10 +32,11 @@ export default function Discover() {
   const [spaceType, setSpaceType] = useState<string | null>(null);
   const [crowdFilter, setCrowdFilter] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
-  const city = useStore((s) => s.city);
+
+  const city = useActiveCity();
   const setCity = useStore((s) => s.setCity);
-  const all = useAllEvents();
-  const spaces = useAllSpaces();
+  const { events: all, isLoading: eventsLoading } = useEventsQuery();
+  const { spaces, isLoading: spacesLoading } = useSpacesQuery();
 
   const areas = Object.keys(AREAS).filter((a) => AREAS[a].city === city);
   const list = useMemo(
@@ -37,10 +47,18 @@ export default function Discover() {
         .filter((e) => !vibe || e.vibe === vibe)
         .filter((e) => !area || e.area === area)
         .filter((e) => when === 'any' || bucket(e) === when)
-        .filter((e) => (price === 'free' ? minPrice(e) === 0 : price === 'paid' ? minPrice(e) > 0 : true))
+        .filter((e) =>
+          price === 'free' ? minPrice(e) === 0 : price === 'paid' ? minPrice(e) > 0 : true
+        )
         .filter((e) => minPrice(e) <= maxPrice)
-        .filter((e) => !q || (e.title + e.area + e.category + e.vibe).toLowerCase().includes(q.toLowerCase())),
-    [all, city, cat, vibe, area, when, price, maxPrice, q],
+        .filter(
+          (e) =>
+            !q ||
+            (e.title + (e.venueName ?? '') + e.area + e.category + e.vibe)
+              .toLowerCase()
+              .includes(q.toLowerCase())
+        ),
+    [all, city, cat, vibe, area, when, price, maxPrice, q]
   );
 
   const spaceList = spaces.filter(
@@ -48,11 +66,20 @@ export default function Discover() {
       s.city === city &&
       (!spaceType || s.type === spaceType) &&
       (!crowdFilter || s.crowd === crowdFilter) &&
-      (!q || (s.name + s.type + s.area + (s.amenities?.join(' ') ?? '')).toLowerCase().includes(q.toLowerCase())) &&
-      (!area || s.area === area),
+      (!q ||
+        (s.name + s.type + s.area + (s.amenities?.join(' ') ?? ''))
+          .toLowerCase()
+          .includes(q.toLowerCase())) &&
+      (!area || s.area === area)
   );
 
-  const activeFilters = [when !== 'any', price !== 'any', !!vibe, !!area, maxPrice < 100000].filter(Boolean).length;
+  const activeFilters = [
+    when !== 'any',
+    price !== 'any',
+    !!vibe,
+    !!area,
+    maxPrice < 100000,
+  ].filter(Boolean).length;
 
   const reset = () => {
     setCat(null);
@@ -71,7 +98,9 @@ export default function Discover() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Explore {city}</h1>
           <p className="muted text-xs">
-            {tab === 'events' ? `${list.length} events available` : `${spaceList.length} social spaces`}
+            {tab === 'events'
+              ? `${list.length} event${list.length === 1 ? '' : 's'} available`
+              : `${spaceList.length} social space${spaceList.length === 1 ? '' : 's'}`}
           </p>
         </div>
         <button
@@ -90,7 +119,10 @@ export default function Discover() {
       {/* Search Bar + Filter Button */}
       <div className="mt-4 flex gap-2.5">
         <div className="relative flex-1">
-          <Icon name="search" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Icon
+            name="search"
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+          />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -149,11 +181,17 @@ export default function Discover() {
       )}
 
       {tab === 'events' ? (
-        list.length === 0 ? (
+        eventsLoading ? (
+          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : list.length === 0 ? (
           <EmptyState
             icon="search_off"
             title="No matching events"
-            text="Try clearing a filter or adjusting your price range."
+            text="Try clearing a filter, adjusting your price range, or switching cities."
             action={
               <Button variant="outline" onClick={reset}>
                 Reset filters
@@ -172,18 +210,20 @@ export default function Discover() {
           {/* Social Space Discovery Filter Bar */}
           <div className="mt-4 space-y-2.5">
             <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-              {['All', 'Rooftop', 'Lounge', 'Gallery', 'Beach spot', 'Co-working café'].map((type) => {
-                const active = (type === 'All' && !spaceType) || spaceType === type;
-                return (
-                  <Chip
-                    key={type}
-                    active={active}
-                    onClick={() => setSpaceType(type === 'All' ? null : active ? null : type)}
-                  >
-                    {type}
-                  </Chip>
-                );
-              })}
+              {['All', 'Rooftop', 'Lounge', 'Gallery', 'Beach spot', 'Co-working café'].map(
+                (type) => {
+                  const active = (type === 'All' && !spaceType) || spaceType === type;
+                  return (
+                    <Chip
+                      key={type}
+                      active={active}
+                      onClick={() => setSpaceType(type === 'All' ? null : active ? null : type)}
+                    >
+                      {type}
+                    </Chip>
+                  );
+                }
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -201,15 +241,30 @@ export default function Discover() {
                         : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-midnight-900 dark:text-slate-300'
                     }`}
                   >
-                    {c === 'Quiet' ? 'Quiet (Focused)' : c === 'Moderate' ? 'Moderate (Vibrant)' : c === 'Busy' ? 'Busy (Packed)' : 'All'}
+                    {c === 'Quiet'
+                      ? 'Quiet (Focused)'
+                      : c === 'Moderate'
+                        ? 'Moderate (Vibrant)'
+                        : c === 'Busy'
+                          ? 'Busy (Packed)'
+                          : 'All'}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {spaceList.length === 0 ? (
-            <EmptyState icon="storefront" title="No spaces found" text="Try another space type, crowd filter, or search keyword." />
+          {spacesLoading ? (
+            <div className="mt-2 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              <SkeletonCard />
+              <SkeletonCard />
+            </div>
+          ) : spaceList.length === 0 ? (
+            <EmptyState
+              icon="storefront"
+              title="No spaces found"
+              text="Try another space type, crowd filter, or search keyword."
+            />
           ) : (
             <div className="mt-2 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {spaceList.map((s) => (
@@ -234,13 +289,16 @@ export default function Discover() {
                   </div>
                   <div className="space-y-2 p-4">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="truncate text-base font-semibold text-slate-900 dark:text-white">{s.name}</h3>
-                      <Stars value={s.rating} />
+                      <h3 className="truncate text-base font-semibold text-slate-900 dark:text-white">
+                        {s.name}
+                      </h3>
+                      {s.rating > 0 && <Stars value={s.rating} />}
                     </div>
-                    <p className="muted text-xs">{s.area}, {s.city} · {s.hours}</p>
+                    <p className="muted text-xs">
+                      {s.area}, {s.city} · {s.hours}
+                    </p>
 
-                    {/* Social Space Amenity Tags */}
-                    {s.amenities && (
+                    {s.amenities && s.amenities.length > 0 && (
                       <div className="flex flex-wrap gap-1 pt-1">
                         {s.amenities.slice(0, 3).map((a) => (
                           <span
@@ -255,7 +313,11 @@ export default function Discover() {
 
                     <div className="flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
                       <div>
-                        {s.verified ? <VerifiedBadge /> : <span className="muted text-xs">Unverified listing</span>}
+                        {s.verified ? (
+                          <VerifiedBadge />
+                        ) : (
+                          <span className="muted text-xs">Unverified listing</span>
+                        )}
                       </div>
                       <span className="text-[11px] font-medium text-brand-600 hover:underline dark:text-brand-400">
                         View Space &rarr;

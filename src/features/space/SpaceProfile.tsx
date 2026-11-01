@@ -1,9 +1,26 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import { convex } from '../../lib/convex';
 import { Icon } from '../../design-system/Icon';
-import { getSpace } from '../../data/mock';
-import { Badge, BottomSheet, Button, Card, Cover, EmptyState, Stars, VerifiedBadge } from '../../design-system/ui';
-import { useStore, useAllSpaces, useAllEvents } from '../../store';
+import {
+  Badge,
+  BottomSheet,
+  Button,
+  Card,
+  Cover,
+  EmptyState,
+  Stars,
+  VerifiedBadge,
+  SkeletonCard,
+} from '../../design-system/ui';
+import {
+  useAuth,
+  useStore,
+  mapConvexSpace,
+  mapConvexEvent,
+} from '../../store';
 import { naira } from '../../lib/format';
 import { toast } from '../../lib/fx';
 import { EventCard } from '../discover/EventCard';
@@ -11,26 +28,42 @@ import { EventCard } from '../discover/EventCard';
 export default function SpaceProfile() {
   const { id } = useParams();
   const nav = useNavigate();
-  const spaces = useAllSpaces();
-  const allEvents = useAllEvents();
-  const user = useStore((s) => s.user);
-  const sp = spaces.find((s) => s.id === id) ?? getSpace(id ?? '');
-  const addBooking = useStore((s) => s.addBooking);
-  const report = useStore((s) => s.report);
+  const loc = useLocation();
+  const { user } = useAuth();
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+
+  const rawSpace = useQuery(api.spaces.getById, id ? { id: id as any } : 'skip');
+
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState('');
   const [guests, setGuests] = useState(12);
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleOpenReservation = () => {
     if (!user) {
       toast('Please log in to reserve spaces.');
-      nav(`/auth?mode=signin&redirect=${encodeURIComponent(location.pathname)}`);
+      nav(`/auth?mode=signin&redirect=${encodeURIComponent(loc.pathname)}`);
+      return;
+    }
+    if (!user.emailVerified) {
+      toast('Verify your email before requesting a space reservation.');
+      setVerifyModalOpen(true);
       return;
     }
     setOpen(true);
   };
 
-  if (!sp) {
+  if (rawSpace === undefined) {
+    return (
+      <div className="space-y-4 px-4 py-6 md:px-0">
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
+  }
+
+  if (!rawSpace) {
     return (
       <EmptyState
         icon="storefront"
@@ -40,7 +73,30 @@ export default function SpaceProfile() {
     );
   }
 
-  const upcoming = allEvents.filter((e) => e.spaceId === sp.id);
+  const sp = mapConvexSpace(rawSpace);
+  const upcoming = (rawSpace.upcomingEvents ?? []).map(mapConvexEvent);
+
+  const handleSubmitReservation = async () => {
+    if (!user || !date) return;
+    setSubmitting(true);
+    try {
+      await convex.mutation(api.spaces.createBooking, {
+        userId: user._id as any,
+        spaceId: sp.id as any,
+        date,
+        guests,
+        notes: notes.trim() || undefined,
+      });
+      setOpen(false);
+      setDate('');
+      setNotes('');
+      toast('Reservation requested! Track confirmation status in your Profile.');
+    } catch (err: any) {
+      toast(err?.message || 'Unable to submit reservation.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="pb-6 md:py-6">
@@ -73,42 +129,54 @@ export default function SpaceProfile() {
         <div className="space-y-6 md:col-span-8">
           <Card className="p-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">About this space</h2>
-              <Stars value={sp.rating} />
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                About this space
+              </h2>
+              {sp.rating > 0 && <Stars value={sp.rating} />}
             </div>
             <p className="muted mt-2 text-sm leading-relaxed">{sp.about}</p>
 
-            <div className="mt-4 grid grid-cols-3 gap-2.5">
-              {sp.photos.map((p, i) => (
-                <Cover key={i} gradient={p} className="h-28 rounded-xl" label={`${sp.name} gallery ${i + 1}`} />
-              ))}
-            </div>
+            {sp.photos.length > 0 && (
+              <div className="mt-4 grid grid-cols-3 gap-2.5">
+                {sp.photos.map((p, i) => (
+                  <Cover
+                    key={i}
+                    gradient={p}
+                    className="h-28 rounded-xl"
+                    label={`${sp.name} gallery ${i + 1}`}
+                  />
+                ))}
+              </div>
+            )}
           </Card>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <Card className="p-4 text-xs">
-              <Icon name="schedule" className="text-brand-500 text-lg" />
+              <Icon name="schedule" className="text-lg text-brand-500" />
               <p className="muted mt-1.5">Opening Hours</p>
               <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.hours}</p>
             </Card>
             <Card className="p-4 text-xs">
-              <Icon name="groups" className="text-brand-500 text-lg" />
-              <p className="muted mt-1.5">Current Crowd</p>
+              <Icon name="groups" className="text-lg text-brand-500" />
+              <p className="muted mt-1.5">Typical Crowd</p>
               <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.crowd}</p>
             </Card>
             <Card className="p-4 text-xs">
-              <Icon name="shield" className="text-brand-500 text-lg" />
+              <Icon name="shield" className="text-lg text-brand-500" />
               <p className="muted mt-1.5">Safety &amp; Access</p>
               <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.safety}</p>
             </Card>
           </div>
 
-          {/* Social Space Amenities & Discovery Highlights */}
           <Card className="space-y-4 p-5">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Space Highlights &amp; Amenities</h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Space Highlights &amp; Amenities
+            </h2>
             {sp.amenities && sp.amenities.length > 0 && (
               <div>
-                <p className="muted mb-2 text-xs font-medium uppercase tracking-wider">Features</p>
+                <p className="muted mb-2 text-xs font-medium uppercase tracking-wider">
+                  Features
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {sp.amenities.map((a) => (
                     <span
@@ -123,46 +191,37 @@ export default function SpaceProfile() {
               </div>
             )}
 
-            <div className="grid gap-3 pt-2 sm:grid-cols-3 text-xs">
-              {sp.dressCode && (
-                <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-midnight-950">
-                  <p className="muted text-[11px]">Dress Code</p>
-                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.dressCode}</p>
-                </div>
-              )}
+            <div className="grid gap-3 pt-2 text-xs sm:grid-cols-3">
+              <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-midnight-950">
+                <p className="muted text-[11px]">Address</p>
+                <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">
+                  {sp.address || `${sp.area}, ${sp.city}`}
+                </p>
+              </div>
               {sp.capacity && (
                 <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-midnight-950">
                   <p className="muted text-[11px]">Max Capacity</p>
-                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.capacity} Guests</p>
+                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">
+                    {sp.capacity} Guests
+                  </p>
                 </div>
               )}
-              {sp.bestFor && (
+              {sp.contactPhone && (
                 <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 dark:border-slate-800 dark:bg-midnight-950">
-                  <p className="muted text-[11px]">Best For</p>
-                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{sp.bestFor.join(', ')}</p>
+                  <p className="muted text-[11px]">Venue Desk</p>
+                  <p className="mt-0.5 font-semibold text-slate-900 dark:text-white">
+                    {sp.contactPhone}
+                  </p>
                 </div>
               )}
             </div>
           </Card>
 
-          <div>
-            <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-white">Guest Reviews</h2>
-            <div className="space-y-2.5">
-              {sp.reviews.map((r, i) => (
-                <Card key={i} className="p-4 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 dark:text-white">{r.who}</span>
-                    <Stars value={r.rating} />
-                  </div>
-                  <p className="muted mt-1 text-xs leading-relaxed">{r.text}</p>
-                </Card>
-              ))}
-            </div>
-          </div>
-
           {upcoming.length > 0 && (
             <div>
-              <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-white">Upcoming at {sp.name}</h2>
+              <h2 className="mb-3 text-base font-semibold text-slate-900 dark:text-white">
+                Upcoming at {sp.name}
+              </h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 {upcoming.map((e) => (
                   <EventCard key={e.id} event={e} />
@@ -175,8 +234,12 @@ export default function SpaceProfile() {
         <div className="space-y-4 md:col-span-4">
           <Card className="p-5 md:sticky md:top-22">
             <p className="muted text-xs">Private table &amp; space hire</p>
-            <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">From {naira(sp.bookingFrom)}</p>
-            <p className="muted mt-1 text-xs">Direct confirmation from {sp.name} within 24 hours.</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
+              From {naira(sp.bookingFrom)}
+            </p>
+            <p className="muted mt-1 text-xs">
+              Direct reservation request routed to {sp.name}&apos;s venue desk.
+            </p>
             <Button full size="lg" className="mt-4" onClick={handleOpenReservation}>
               {user ? 'Reserve Space' : 'Log In to Reserve'}
             </Button>
@@ -185,26 +248,18 @@ export default function SpaceProfile() {
                 <Icon name="map" className="text-base" /> View on Map
               </Button>
             </Link>
-            <button
-              type="button"
-              className="muted mt-4 inline-flex items-center gap-1 text-xs hover:underline"
-              onClick={() => {
-                report(sp.name, 'Reported space');
-                toast('Report sent to trust team');
-              }}
-            >
-              <Icon name="flag" className="text-sm" /> Report venue details
-            </button>
           </Card>
         </div>
       </div>
 
-      {/* Docked Mobile CTA Bar (no bottom nav on /space/:id -> zero overlap) */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl dark:bg-midnight-900/95 md:hidden">
+      {/* Docked Mobile CTA Bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-white/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3 backdrop-blur-xl dark:bg-midnight-900/95 md:hidden">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div>
             <p className="muted text-[11px]">Bookings from</p>
-            <p className="text-base font-bold text-slate-900 dark:text-white">{naira(sp.bookingFrom)}</p>
+            <p className="text-base font-bold text-slate-900 dark:text-white">
+              {naira(sp.bookingFrom)}
+            </p>
           </div>
           <Button size="lg" onClick={handleOpenReservation}>
             {user ? 'Reserve Space' : 'Log In to Reserve'}
@@ -213,12 +268,16 @@ export default function SpaceProfile() {
       </div>
 
       <BottomSheet open={open} onClose={() => setOpen(false)} title={`Reserve ${sp.name}`}>
-        <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300" htmlFor="bd">
+        <label
+          className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300"
+          htmlFor="bd"
+        >
           Preferred Date
         </label>
         <input
           id="bd"
           type="date"
+          min={new Date().toISOString().split('T')[0]}
           value={date}
           onChange={(e) => setDate(e.target.value)}
           className="mb-4 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
@@ -231,25 +290,39 @@ export default function SpaceProfile() {
           id="bg"
           type="range"
           min={2}
-          max={200}
+          max={Math.min(300, sp.capacity ?? 200)}
           value={guests}
           onChange={(e) => setGuests(+e.target.value)}
           className="mb-4 h-2 w-full cursor-pointer accent-[#4F46E5]"
         />
+        <label
+          className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300"
+          htmlFor="bnotes"
+        >
+          Special Request (Optional)
+        </label>
+        <input
+          id="bnotes"
+          type="text"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Birthday dinner, VIP booth, private hire..."
+          className="mb-4 h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
+        />
         <p className="muted mb-4 text-xs">
-          Estimated minimum spend: <strong className="text-slate-900 dark:text-white">{naira(sp.bookingFrom + guests * 500)}</strong>.
+          Estimated minimum spend:{' '}
+          <strong className="text-slate-900 dark:text-white">
+            {naira(sp.bookingFrom + guests * 500)}
+          </strong>
+          .
         </p>
         <Button
           full
           size="lg"
-          disabled={!date}
-          onClick={() => {
-            addBooking({ spaceId: sp.id, date, guests });
-            setOpen(false);
-            toast('Reservation requested. Track status in Profile.');
-          }}
+          disabled={!date || submitting}
+          onClick={handleSubmitReservation}
         >
-          Send Reservation Request
+          {submitting ? 'Submitting...' : 'Send Reservation Request'}
         </Button>
       </BottomSheet>
     </div>

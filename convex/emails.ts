@@ -7,43 +7,38 @@ export const sendEmailAction = action({
     subject: v.string(),
     html: v.string(),
   },
-  handler: async (ctx, args) => {
-    const apiKey =
-      process.env.RESEND_API_KEY ||
-      process.env.VITE_RESEND_API_KEY ||
-      '';
-    const fromEmail =
-      process.env.RESEND_FROM_EMAIL ||
-      process.env.VITE_RESEND_FROM_EMAIL ||
-      'COORDINA <onboarding@resend.dev>';
+  handler: async (_ctx, args) => {
+    const apiKey = process.env.SENDGRID_API_KEY || '';
+    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'apvdirect1@gmail.com';
+    const fromName = process.env.SENDGRID_FROM_NAME || 'COORDINA';
 
     if (!apiKey) {
-      return { success: false, error: 'Resend API key missing from environment' };
+      return { success: false, error: 'SENDGRID_API_KEY is not configured in Convex environment' };
     }
 
     try {
-      const res = await fetch('https://api.resend.com/emails', {
+      const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: fromEmail,
-          to: [args.to],
+          personalizations: [{ to: [{ email: args.to }] }],
+          from: { email: fromEmail, name: fromName },
           subject: args.subject,
-          html: args.html,
+          content: [{ type: 'text/html', value: args.html }],
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data };
+      if (res.status === 202 || res.ok) {
+        return { success: true };
       }
-      return { success: true, id: data.id };
+
+      const detail = await res.text();
+      return { success: false, error: detail || `SendGrid status ${res.status}` };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Error sending email' };
+      return { success: false, error: err?.message || 'Error sending email via SendGrid' };
     }
   },
 });
-
