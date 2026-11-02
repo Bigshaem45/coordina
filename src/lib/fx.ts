@@ -1,6 +1,32 @@
 import { triggerHaptic } from './capacitor';
 
 export const toast = (message: string) => {
+  if (typeof message === 'string') {
+    if (
+      message.includes('[CONVEX') ||
+      message.includes('Uncaught Error:') ||
+      message.includes('Server Error') ||
+      message.includes('Called by client')
+    ) {
+      console.error('[COORDINA Raw Error Suppressed from UI]:', message);
+      let clean = message;
+      if (clean.includes('Uncaught Error:')) {
+        clean = clean.split('Uncaught Error:')[1] || clean;
+      }
+      if (clean.includes('Server Error')) {
+        clean = clean.split('Server Error')[1] || clean;
+      }
+      if (clean.includes('at handler')) {
+        clean = clean.split('at handler')[0] || clean;
+      }
+      clean = clean.split('Called by client')[0]?.replace(/^[:\s\-]+/, '').trim();
+      if (!clean || clean.length > 120 || clean.includes('[CONVEX')) {
+        clean = 'An error occurred. Check the console for details.';
+      }
+      message = clean;
+    }
+  }
+
   triggerHaptic('light');
   window.dispatchEvent(new CustomEvent('cho-toast', { detail: message }));
 };
@@ -35,13 +61,13 @@ export function flyToCart(from: DOMRect, image: string) {
       { transform: 'translate(0,0) scale(1)', opacity: 1 },
       { transform: `translate(${dx}px,${dy}px) scale(0.2)`, opacity: 0.2 },
     ],
-    { duration: 560, easing: 'cubic-bezier(.32,.72,0,1)' },
+    { duration: 560, easing: 'cubic-bezier(.32,.72,0,1)' }
   );
   anim.onfinish = () => {
     el.remove();
     target.animate(
       [{ transform: 'scale(1)' }, { transform: 'scale(1.18)' }, { transform: 'scale(1)' }],
-      { duration: 240 },
+      { duration: 240 }
     );
   };
 }

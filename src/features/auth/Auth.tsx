@@ -12,6 +12,7 @@ import {
   sendEmailVerificationOtpEmail,
 } from '../../lib/email';
 import { toast } from '../../lib/fx';
+import { cleanErrorMessage } from '../../lib/errors';
 
 type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset' | 'verify';
 type SignupRole = 'attendee' | 'organiser' | 'venue_manager';
@@ -111,7 +112,8 @@ export default function Auth() {
         setError(mailRes.error || 'Could not deliver email. Verify SENDGRID_API_KEY in Vercel.');
       }
     } catch (err: any) {
-      setError(err?.message || 'Failed to generate verification code.');
+      console.error('[Auth Resend Verification Error]', err);
+      setError(cleanErrorMessage(err, 'Failed to generate verification code.'));
     } finally {
       setBusy(false);
     }
@@ -135,7 +137,8 @@ export default function Auth() {
         );
         setMode('reset');
       } catch (err: any) {
-        setError(err?.message || 'Could not request password reset.');
+        console.error('[Auth Forgot Password Error]', err);
+        setError(cleanErrorMessage(err, 'Could not request password reset.'));
       } finally {
         setBusy(false);
       }
@@ -158,7 +161,8 @@ export default function Auth() {
         toast('Password updated! You are now signed in.');
         navigateAfterAuth(res.role as UserRole, true);
       } catch (err: any) {
-        setError(err?.message || 'Invalid or expired reset code.');
+        console.error('[Auth Reset Password Error]', err);
+        setError(cleanErrorMessage(err, 'Invalid or expired reset code.'));
       } finally {
         setBusy(false);
       }
@@ -176,7 +180,8 @@ export default function Auth() {
         toast('Email verified! Welcome to COORDINA.');
         navigateAfterAuth(res.role as UserRole, res.onboarded);
       } catch (err: any) {
-        setError(err?.message || 'Invalid verification code.');
+        console.error('[Auth Verify Email Error]', err);
+        setError(cleanErrorMessage(err, 'Invalid verification code. Please check your inbox.'));
       } finally {
         setBusy(false);
       }
@@ -218,7 +223,8 @@ export default function Auth() {
       toast(`Welcome back, ${res.name}!`);
       navigateAfterAuth(res.role as UserRole, res.onboarded);
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed. Check your credentials and try again.');
+      console.error('[Auth Sign In Error]', err);
+      setError(cleanErrorMessage(err, 'Incorrect email or password. Please try again.'));
     } finally {
       setBusy(false);
     }

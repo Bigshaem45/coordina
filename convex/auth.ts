@@ -186,18 +186,26 @@ export const signIn = mutation({
       .first();
 
     if (!user) {
-      throw new Error('No account found for this email. Please create an account first.');
+      throw new Error('Incorrect email or password.');
     }
 
     if (!user.passwordHash || !user.passwordSalt) {
-      throw new Error(
-        'Password not yet configured for this account. Click "Forgot password?" to verify via email and set your password.'
-      );
-    }
-
-    const candidateHash = await hashPassword(args.password, user.passwordSalt);
-    if (candidateHash !== user.passwordHash) {
-      throw new Error('Incorrect email or password.');
+      // Automatically configure password for accounts created before password hashing
+      if (args.password && args.password.length >= 6) {
+        const salt = generateSalt();
+        const hash = await hashPassword(args.password, salt);
+        await ctx.db.patch(user._id, {
+          passwordHash: hash,
+          passwordSalt: salt,
+        });
+      } else {
+        throw new Error('Password must be at least 6 characters.');
+      }
+    } else {
+      const candidateHash = await hashPassword(args.password, user.passwordSalt);
+      if (candidateHash !== user.passwordHash) {
+        throw new Error('Incorrect email or password.');
+      }
     }
 
     let organizer = null;

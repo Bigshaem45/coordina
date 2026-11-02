@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
             <h1 className="mt-4 text-lg font-semibold">Something went wrong</h1>
             <p className="muted mt-1 text-xs">
-              {this.state.error?.message ?? 'An unexpected render error occurred.'}
+              An unexpected issue occurred. Please check the console for details or refresh the page.
             </p>
             <div className="mt-5 flex gap-2">
               <Button full variant="outline" onClick={() => (window.location.href = '/')}>

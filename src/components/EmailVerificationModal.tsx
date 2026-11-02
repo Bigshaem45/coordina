@@ -6,6 +6,7 @@ import { convex } from '../lib/convex';
 import { api } from '../../convex/_generated/api';
 import { sendEmailVerificationOtpEmail } from '../lib/email';
 import { toast } from '../lib/fx';
+import { cleanErrorMessage } from '../lib/errors';
 
 export function EmailVerificationModal() {
   const isOpen = useStore((s) => s.verifyModalOpen);
@@ -54,7 +55,8 @@ export function EmailVerificationModal() {
         );
       }
     } catch (err: any) {
-      setError(err?.message || 'Could not request verification code.');
+      console.error('[Email Verification Request Error]', err);
+      setError(cleanErrorMessage(err, 'Could not request verification code.'));
     } finally {
       setBusy(false);
     }
@@ -77,7 +79,8 @@ export function EmailVerificationModal() {
       toast('Email verified! All platform actions are now unlocked.');
       setOpen(false);
     } catch (err: any) {
-      setError(err?.message || 'Invalid verification code. Please check your inbox and try again.');
+      console.error('[Email Verification Error]', err);
+      setError(cleanErrorMessage(err, 'Invalid verification code. Please check your inbox and try again.'));
     } finally {
       setBusy(false);
     }
