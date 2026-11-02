@@ -122,6 +122,7 @@ export const createBooking = mutation({
     spaceId: v.id('spaces'),
     date: v.string(),
     guests: v.number(),
+    notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -144,6 +145,7 @@ export const createBooking = mutation({
       spaceName: space.name,
       date: args.date,
       guests: Math.max(1, args.guests),
+      notes: args.notes,
       estimatedSpend,
       status: 'Requested',
       createdAt: Date.now(),

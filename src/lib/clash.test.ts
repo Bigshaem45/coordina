@@ -1,34 +1,105 @@
 import { describe, expect, it } from 'vitest';
 import { detectClashes, type PlanItem } from './clash';
 import { computeFees, computeOrganiserPostingFee } from './format';
-import { events } from '../data/mock';
+import type { CEvent } from '../types';
 
-const item = (id: string, tierIdx = 0): PlanItem => {
-  const event = events.find((e) => e.id === id)!;
+function makeFixtureEvent(overrides: Partial<CEvent> & { id: string }): CEvent {
+  return {
+    id: overrides.id,
+    title: overrides.title ?? `Event ${overrides.id}`,
+    category: overrides.category ?? 'Concerts',
+    vibe: overrides.vibe ?? 'Energetic',
+    city: overrides.city ?? 'Lagos',
+    area: overrides.area ?? 'Lekki',
+    spaceId: overrides.spaceId ?? 'sp_1',
+    venueName: overrides.venueName ?? 'Venue',
+    address: overrides.address ?? '1 Admiralty Way',
+    organiserId: overrides.organiserId ?? 'org_1',
+    start: overrides.start ?? '2026-12-05T19:00:00.000Z',
+    end: overrides.end ?? '2026-12-05T23:00:00.000Z',
+    image: overrides.image ?? '',
+    description: overrides.description ?? 'Fixture event',
+    tiers: overrides.tiers ?? [
+      { id: 't1', name: 'Regular', price: 10000, total: 100, remaining: 50 },
+      { id: 't2', name: 'VIP', price: 50000, total: 20, remaining: 15 },
+    ],
+    lat: overrides.lat ?? 6.4474,
+    lng: overrides.lng ?? 3.4723,
+  };
+}
+
+const fixtures: Record<string, CEvent> = {
+  lekkiNight: makeFixtureEvent({
+    id: 'ev_lekki',
+    city: 'Lagos',
+    area: 'Lekki',
+    lat: 6.4474,
+    lng: 3.4723,
+  }),
+  viOverlap: makeFixtureEvent({
+    id: 'ev_vi',
+    city: 'Lagos',
+    area: 'Victoria Island',
+    lat: 6.4281,
+    lng: 3.4219,
+  }),
+  ikejaFar: makeFixtureEvent({
+    id: 'ev_ikeja',
+    city: 'Lagos',
+    area: 'Ikeja',
+    lat: 6.6018,
+    lng: 3.3515,
+  }),
+  lowStock: makeFixtureEvent({
+    id: 'ev_low',
+    tiers: [{ id: 't1', name: 'Regular', price: 8000, total: 100, remaining: 4 }],
+  }),
+};
+
+const item = (key: keyof typeof fixtures, tierIdx = 0): PlanItem => {
+  const event = fixtures[key];
   return { event, tier: event.tiers[tierIdx], qty: 1 };
 };
-const shift = (it: PlanItem, startISO: string, endISO: string): PlanItem => ({ ...it, event: { ...it.event, start: startISO, end: endISO } });
+
+const shift = (it: PlanItem, startISO: string, endISO: string): PlanItem => ({
+  ...it,
+  event: { ...it.event, start: startISO, end: endISO },
+});
 
 describe('clash engine', () => {
   it('detects hard overlap', () => {
-    const a = item('e1');
-    const b = shift(item('e5'), a.event.start, a.event.end);
+    const a = item('lekkiNight');
+    const b = shift(item('viOverlap'), a.event.start, a.event.end);
     expect(detectClashes([a, b], 1e9).some((c) => c.type === 'hard')).toBe(true);
   });
+
   it('detects travel clash Lekki to Ikeja with a short gap', () => {
-    const a = item('e1');
+    const a = item('lekkiNight');
     const endA = new Date(a.event.end);
-    const b = shift(item('e10'), new Date(endA.getTime() + 20 * 60000).toISOString(), new Date(endA.getTime() + 3 * 3600000).toISOString());
+    const b = shift(
+      item('ikejaFar'),
+      new Date(endA.getTime() + 15 * 60000).toISOString(),
+      new Date(endA.getTime() + 3 * 3600000).toISOString()
+    );
     expect(detectClashes([a, b], 1e9).some((c) => c.type === 'travel')).toBe(true);
   });
+
   it('detects budget clash', () => {
-    expect(detectClashes([item('e1', 1)], 1000).some((c) => c.type === 'budget')).toBe(true);
+    expect(detectClashes([item('lekkiNight', 1)], 1000).some((c) => c.type === 'budget')).toBe(
+      true
+    );
   });
+
   it('flags low stock', () => {
-    expect(detectClashes([item('e3', 0)], 1e9).some((c) => c.type === 'soldout')).toBe(true);
+    expect(detectClashes([item('lowStock', 0)], 1e9).some((c) => c.type === 'soldout')).toBe(
+      true
+    );
   });
+
   it('has no clash for a single comfortable event', () => {
-    expect(detectClashes([item('e6')], 1e9).filter((c) => c.type !== 'soldout')).toHaveLength(0);
+    expect(
+      detectClashes([item('lekkiNight')], 1e9).filter((c) => c.type !== 'soldout')
+    ).toHaveLength(0);
   });
 });
 
@@ -46,7 +117,7 @@ describe('fees', () => {
     expect(fee100.postingFee).toBe(2500);
 
     const fee250 = computeOrganiserPostingFee([{ price: 0, qty: 250 }]);
-    expect(fee250.hundredBlocks).toBe(3); // 250 rounded up to 3 blocks
+    expect(fee250.hundredBlocks).toBe(3);
     expect(fee250.postingFee).toBe(7500);
 
     const fee500 = computeOrganiserPostingFee([{ price: 0, qty: 500 }]);
@@ -59,4 +130,3 @@ describe('fees', () => {
     expect(feePaid.postingFee).toBe(0);
   });
 });
-

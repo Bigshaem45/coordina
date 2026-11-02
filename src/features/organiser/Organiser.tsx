@@ -1,16 +1,39 @@
-import { useState } from 'react';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { Link } from 'react-router-dom';
+import { useQuery } from 'convex/react';
 import { Icon } from '../../design-system/Icon';
-import { CATEGORIES, AREAS, CATEGORY_PHOTO } from '../../data/mock';
-import { Badge, Button, Card, Chip, Cover, EmptyState } from '../../design-system/ui';
-import { useAllEvents, useAllSpaces, useStore } from '../../store';
-import { fmtDate, fmtTime, naira, computeOrganiserPostingFee, FREE_EVENT_RATE_PER_100 } from '../../lib/format';
+import { CATEGORIES, AREAS, CATEGORY_PHOTO } from '../../lib/constants';
+import { Badge, Button, Card, Chip, Cover, EmptyState, Skeleton } from '../../design-system/ui';
+import {
+  useAuth,
+  useSpacesQuery,
+  useStore,
+  mapConvexEvent,
+  type SessionUser,
+} from '../../store';
+import {
+  fmtDate,
+  fmtTime,
+  naira,
+  computeOrganiserPostingFee,
+  FREE_EVENT_RATE_PER_100,
+} from '../../lib/format';
 import { toast } from '../../lib/fx';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
-import { sendVenueConfirmationRequestEmail } from '../../lib/email';
-import type { Category, CEvent, Vibe, EventVerificationRecord } from '../../types';
+import { sendEmail, sendVenueConfirmationRequestEmail } from '../../lib/email';
+import type { Category, Vibe } from '../../types';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { calculateRiskAssessment } from '../../lib/verification';
 import GateScanner from '../wallet/GateScanner';
@@ -20,25 +43,29 @@ import {
   resolveAccount,
   createTransferRecipient,
   initiateTransfer,
-  getPaystackBalance,
+  payWithPaystack,
 } from '../../lib/paystack';
 
 type Tab = 'Dashboard' | 'Create' | 'Verification' | 'Scanner' | 'Payouts';
-
-const sales = Array.from({ length: 14 }, (_, i) => ({
-  day: `D${i + 1}`,
-  sales: Math.round(40 + Math.sin(i / 2) * 20 + i * 9),
-  revenue: Math.round((40 + i * 9) * 9000),
-}));
 
 const inputCls =
   'h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-100 dark:placeholder:text-slate-500';
 
 export default function Organiser() {
   const [tab, setTab] = useState<Tab>('Dashboard');
-  const user = useStore((s) => s.user);
-  const upgradeToOrganiser = useStore((s) => s.upgradeToOrganiser);
+  const { user, isLoading } = useAuth();
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+  const [upgradeBrandName, setUpgradeBrandName] = useState('');
+  const [upgrading, setUpgrading] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4 px-4 py-8">
+        <Skeleton className="h-14" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
 
   // Access Restriction Gate: Not signed in
   if (!user) {
@@ -47,78 +74,124 @@ export default function Organiser() {
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300">
           <Icon name="lock" className="text-3xl" />
         </div>
-        <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">Organiser Studio Access</h1>
+        <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
+          Organiser Studio Access
+        </h1>
         <p className="muted mt-2 text-sm leading-relaxed">
-          The Organiser Studio is reserved for event hosts, planners, and space managers. Please sign in or register as an organizer to access the dashboard.
+          The Organiser Studio is reserved for event planners and hosts. Sign in or register an Event Planner account to publish events, complete KYC &amp; venue verification, scan passes, and withdraw payouts.
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Link to="/auth?role=organiser">
             <Button size="lg">Sign In as Organizer</Button>
           </Link>
           <Link to="/auth?mode=signup&role=organiser">
-            <Button size="lg" variant="outline">Register as Organizer</Button>
+            <Button size="lg" variant="outline">
+              Register as Organizer
+            </Button>
           </Link>
         </div>
       </div>
     );
   }
 
-  // Access Restriction Gate: Signed in as Attendee
-  if (user.role === 'attendee') {
+  // Access Restriction Gate: Non-Organiser Role
+  if (user.role !== 'organiser' && user.role !== 'admin') {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300">
           <Icon name="admin_panel_settings" className="text-3xl" />
         </div>
         <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-          <Icon name="person" className="text-xs" /> Attendee Account ({user.email})
+          <Icon name="person" className="text-xs" /> Current Role: {user.role} ({user.email})
         </div>
-        <h1 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">Organizer Privileges Required</h1>
+        <h1 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">
+          Activate Event Planner Studio
+        </h1>
         <p className="muted mt-2 text-sm leading-relaxed">
-          Your account is currently set to <strong>Attendee</strong>. To publish events, verify spaces, scan tickets at the gate, and receive Paystack payouts, please upgrade your account to an Event Organizer.
+          Upgrade your account to <strong>Event Organizer</strong> to publish events, submit corporate &amp; facial biometric KYC, scan tickets at the gate, and settle payouts to your Nigerian bank account.
         </p>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <Button
-            size="lg"
-            onClick={() => {
-              upgradeToOrganiser();
-              toast('Account upgraded to Event Organizer! Welcome to the Studio.');
+
+        {!user.emailVerified ? (
+          <div className="mt-5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-left text-xs text-amber-900 dark:text-amber-200">
+            <p className="font-bold">Verify your email address first</p>
+            <p className="mt-1">
+              Please verify <strong>{user.email}</strong> before activating an Event Planner studio.
+            </p>
+            <Button size="sm" className="mt-3" onClick={() => setVerifyModalOpen(true)}>
+              Verify Email Now
+            </Button>
+          </div>
+        ) : (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setUpgrading(true);
+              try {
+                await convex.mutation(api.auth.upgradeToOrganiser, {
+                  userId: user._id as any,
+                  businessName: upgradeBrandName.trim() || user.name,
+                });
+                toast('Organizer Studio activated for your account!');
+              } catch (err: any) {
+                toast(err?.message || 'Unable to upgrade account.');
+              } finally {
+                setUpgrading(false);
+              }
             }}
+            className="mt-6 space-y-3 text-left"
           >
-            <Icon name="upgrade" /> Upgrade to Event Organizer
-          </Button>
-          <Link to="/home">
-            <Button size="lg" variant="outline">Back to Discover</Button>
-          </Link>
-        </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Organization or Brand Name
+              </label>
+              <input
+                required
+                value={upgradeBrandName}
+                onChange={(e) => setUpgradeBrandName(e.target.value)}
+                placeholder="Enter your registered brand or planning company name"
+                className={inputCls}
+              />
+            </div>
+            <div className="flex flex-wrap gap-3 pt-1">
+              <Button size="lg" type="submit" disabled={upgrading || !upgradeBrandName.trim()}>
+                <Icon name="upgrade" /> {upgrading ? 'Activating…' : 'Activate Organizer Studio'}
+              </Button>
+              <Link to="/home">
+                <Button size="lg" variant="outline" type="button">
+                  Back to Discover
+                </Button>
+              </Link>
+            </div>
+          </form>
+        )}
       </div>
     );
   }
 
   return (
     <div className="px-4 py-6 md:px-0">
-      {/* Bold Organiser Verification Alert */}
       {!user.emailVerified && (
-        <div className="mb-5 rounded-2xl border-2 border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 p-4.5">
+        <div className="mb-5 rounded-2xl border-2 border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 p-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm font-bold">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 font-bold text-white shadow-sm">
                 <Icon name="gpp_bad" className="text-xl" />
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">Organiser Email Unverified</h3>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Organiser Email Unverified
+                  </h3>
                   <Badge tone="coral">Action Required</Badge>
                 </div>
                 <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                  Your organizer email (<strong className="text-slate-900 dark:text-slate-100">{user.email}</strong>) is unverified.
-                  Event publishing, gate scanner access, and bank payout settlements are restricted until verified.
+                  Your organizer email (<strong className="text-slate-900 dark:text-slate-100">{user.email}</strong>) is unverified. Event publishing, KYC submission, gate scanner access, and bank payouts are restricted until verified.
                 </p>
               </div>
             </div>
             <Button
               size="sm"
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold shrink-0 shadow-sm"
+              className="shrink-0 bg-amber-600 font-bold text-white shadow-sm hover:bg-amber-700"
               onClick={() => setVerifyModalOpen(true)}
             >
               <Icon name="mark_email_read" /> Request Verification
@@ -129,8 +202,19 @@ export default function Organiser() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Organiser Studio</h1>
-          <p className="muted mt-0.5 text-sm">Manage events, monitor real-time ticket velocity, scan passes, and track payouts.</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+              Organiser Studio
+            </h1>
+            {user.organizer?.status === 'verified' ? (
+              <Badge tone="neon">KYC Verified</Badge>
+            ) : (
+              <Badge tone="amber">KYC Pending</Badge>
+            )}
+          </div>
+          <p className="muted mt-0.5 text-sm">
+            {user.organizer?.businessName || user.name} · Manage your events, verification dossiers, gate passes, and payouts.
+          </p>
         </div>
         {tab !== 'Create' && (
           <Button size="sm" onClick={() => setTab('Create')}>
@@ -149,39 +233,82 @@ export default function Organiser() {
 
       <div className="mt-5">
         {tab === 'Dashboard' ? (
-          <Dashboard />
+          <Dashboard user={user} onCreateClick={() => setTab('Create')} onVerifyClick={() => setTab('Verification')} />
         ) : tab === 'Create' ? (
-          <Create onDone={() => setTab('Dashboard')} />
+          <Create user={user} onDone={() => setTab('Verification')} />
         ) : tab === 'Verification' ? (
-          <OrganizerVerificationPortal />
+          <OrganizerVerificationPortal user={user} onCreateClick={() => setTab('Create')} />
         ) : tab === 'Scanner' ? (
-          <Scanner />
+          <GateScanner />
         ) : (
-          <Payouts />
+          <Payouts user={user} onGoVerify={() => setTab('Verification')} />
         )}
       </div>
     </div>
   );
 }
 
-function Dashboard() {
-  const allEvents = useAllEvents();
-  const mine = allEvents.filter((e) => e.organiserId === 'org1' || e.organiserId === 'org2' || e.organiserId === 'o1');
-  const checked = useStore((s) => s.checkedIn);
-  const [codes, setCodes] = useState([{ code: 'EARLYBIRD', pct: 15, uses: 42 }]);
+function Dashboard({
+  user,
+  onCreateClick,
+  onVerifyClick,
+}: {
+  user: SessionUser;
+  onCreateClick: () => void;
+  onVerifyClick: () => void;
+}) {
+  const dash = useQuery(api.events.getOrganizerDashboard, { userId: user._id as any });
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const [code, setCode] = useState('');
   const [pct, setPct] = useState(10);
+  const [selectedPromoEvent, setSelectedPromoEvent] = useState<string>('');
+  const [savingPromo, setSavingPromo] = useState(false);
 
-  const sold = mine.reduce((s, e) => s + e.tiers.reduce((a, t) => a + (t.total - t.remaining), 0), 0);
-  const rev = mine.reduce((s, e) => s + e.tiers.reduce((a, t) => a + (t.total - t.remaining) * t.price, 0), 0);
-  const ci = Object.values(checked).reduce((a, b) => a + b, 0);
+  const mine = useMemo(() => (dash?.events ?? []).map(mapConvexEvent), [dash?.events]);
+
+  if (!dash) {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
 
   const kpis = [
-    { label: 'Tickets Sold', value: sold.toLocaleString(), accent: 'border-l-brand-500' },
-    { label: 'Gross Revenue', value: naira(rev), accent: 'border-l-neon-500' },
-    { label: 'Checked In', value: String(ci), accent: 'border-l-amber-500' },
-    { label: 'Live Events', value: String(mine.length), accent: 'border-l-coral-500' },
+    {
+      label: 'Tickets Sold',
+      value: dash.ticketsSold.toLocaleString(),
+      accent: 'border-l-brand-500',
+    },
+    {
+      label: 'Gross Revenue',
+      value: dash.grossRevenue === 0 ? '₦0' : naira(dash.grossRevenue),
+      accent: 'border-l-neon-500',
+    },
+    {
+      label: 'Checked In',
+      value: `${dash.checkedInCount} / ${dash.totalIssuedTickets}`,
+      accent: 'border-l-amber-500',
+    },
+    {
+      label: 'My Events',
+      value: String(mine.length),
+      accent: 'border-l-coral-500',
+    },
   ];
+
+  const tierChartData = mine.flatMap((e) =>
+    e.tiers.map((t) => ({
+      name: `${e.title.slice(0, 14)} · ${t.name}`,
+      sold: Math.max(0, t.total - t.remaining),
+    }))
+  );
 
   return (
     <div className="space-y-5">
@@ -189,133 +316,260 @@ function Dashboard() {
         {kpis.map((k) => (
           <Card key={k.label} className={`border-l-4 ${k.accent} p-4`}>
             <p className="muted text-xs">{k.label}</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">{k.value}</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+              {k.value}
+            </p>
           </Card>
         ))}
       </div>
 
-      {/* Event Portal style structured table */}
-      <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Published Events</h2>
-          <Badge tone="brand">{mine.length} total</Badge>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-xs font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <th className="px-5 py-3">#</th>
-                <th className="px-4 py-3">Event Name</th>
-                <th className="px-4 py-3">Location</th>
-                <th className="px-4 py-3">Date & Hours</th>
-                <th className="px-4 py-3">Sold</th>
-                <th className="px-5 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {mine.map((e, idx) => {
-                const eventSold = e.tiers.reduce((a, t) => a + (t.total - t.remaining), 0);
-                const eventTotal = e.tiers.reduce((a, t) => a + t.total, 0);
-                return (
-                  <tr key={e.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
-                    <td className="px-5 py-3.5 text-xs text-slate-400">{idx + 1}</td>
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <Cover gradient={e.image} category={e.category} label={e.title} className="h-10 w-14 shrink-0 rounded-lg" />
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">{e.title}</p>
-                          <p className="muted text-xs">{e.category}</p>
+      {mine.length === 0 ? (
+        <EmptyState
+          icon="event"
+          title="You Haven’t Published Any Events Yet"
+          body="Create your first event to start selling cryptographic QR passes, tracking 14-day revenue velocity, and requesting remote venue verification."
+          cta={
+            <Button onClick={onCreateClick}>
+              <Icon name="add_circle" /> Publish Your First Event
+            </Button>
+          }
+        />
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              My Published Events
+            </h2>
+            <Badge tone="brand">{mine.length} total</Badge>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <th className="px-5 py-3">#</th>
+                  <th className="px-4 py-3">Event</th>
+                  <th className="px-4 py-3">Trust Status</th>
+                  <th className="px-4 py-3">Date &amp; Venue</th>
+                  <th className="px-4 py-3">Sold</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {mine.map((e, idx) => {
+                  const eventSold = e.tiers.reduce((a, t) => a + Math.max(0, t.total - t.remaining), 0);
+                  const eventTotal = e.tiers.reduce((a, t) => a + t.total, 0);
+                  return (
+                    <tr key={e.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                      <td className="px-5 py-3.5 text-xs text-slate-400">{idx + 1}</td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <Cover
+                            gradient={e.image}
+                            category={e.category}
+                            label={e.title}
+                            className="h-10 w-14 shrink-0 rounded-lg"
+                          />
+                          <div>
+                            <p className="font-medium text-slate-900 dark:text-slate-100">
+                              {e.title}
+                            </p>
+                            <p className="muted text-xs">{e.category}</p>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5 text-slate-600 dark:text-slate-300">
-                      {e.area}, {e.city}
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
-                      <div>{fmtDate(e.start)}</div>
-                      <div className="muted">
-                        {fmtTime(e.start)} – {fmtTime(e.end)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <Badge tone="neon">
-                        {eventSold} / {eventTotal}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <Link
-                        to={`/event/${e.id}`}
-                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-200"
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <VerificationBadge status={e.verificationStatus} size="sm" />
+                      </td>
+                      <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
+                        <div className="font-medium">{e.venueName}</div>
+                        <div className="muted">
+                          {fmtDate(e.start)} · {fmtTime(e.start)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <Badge tone="neon">
+                          {eventSold} / {eventTotal}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          {e.verificationStatus === 'Unverified' && (
+                            <button
+                              type="button"
+                              onClick={onVerifyClick}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-500/15 px-2.5 text-xs font-semibold text-amber-700 hover:bg-amber-500/25 dark:text-amber-300"
+                            >
+                              Verify
+                            </button>
+                          )}
+                          <Link
+                            to={`/event/${e.id}`}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-200"
+                          >
+                            View
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="p-5">
-          <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Ticket Sales (14 Days)</h3>
-          <div className="h-56" role="img" aria-label="Line chart of ticket sales over 14 days">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Revenue Velocity (Last 14 Days)
+            </h3>
+            <span className="muted text-xs">Live Paid Orders</span>
+          </div>
+          <div className="h-56" role="img" aria-label="14-day revenue chart">
             <ResponsiveContainer>
-              <AreaChart data={sales}>
+              <AreaChart data={dash.salesByDay}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.18} />
-                <XAxis dataKey="day" fontSize={11} stroke="#94A3B8" />
+                <XAxis dataKey="label" fontSize={11} stroke="#94A3B8" />
                 <YAxis fontSize={11} stroke="#94A3B8" />
-                <Tooltip />
-                <Area type="monotone" dataKey="sales" stroke="#4F46E5" strokeWidth={2} fill="#4F46E528" />
+                <Tooltip
+                  formatter={(value: any) => [`₦${Number(value).toLocaleString()}`, 'Revenue']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#4F46E5"
+                  strokeWidth={2}
+                  fill="#4F46E528"
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
         <Card className="p-5">
-          <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Sales by Ticket Tier</h3>
-          <div className="h-56">
-            <ResponsiveContainer>
-              <BarChart
-                data={mine.flatMap((e) =>
-                  e.tiers.map((t) => ({ name: `${e.title.slice(0, 12)} · ${t.name}`, sold: t.total - t.remaining })),
-                )}
-              >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.18} />
-                <XAxis dataKey="name" hide />
-                <YAxis fontSize={11} stroke="#94A3B8" />
-                <Tooltip />
-                <Bar dataKey="sold" fill="#8B5CF6" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">
+            Tickets Sold by Tier
+          </h3>
+          {tierChartData.length === 0 ? (
+            <div className="flex h-56 items-center justify-center text-xs text-slate-400">
+              Publish an event to view tier velocity.
+            </div>
+          ) : (
+            <div className="h-56">
+              <ResponsiveContainer>
+                <BarChart data={tierChartData}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.18} />
+                  <XAxis dataKey="name" hide />
+                  <YAxis fontSize={11} stroke="#94A3B8" allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="sold" fill="#8B5CF6" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </Card>
       </div>
 
+      {/* Live Convex Promo Codes */}
       <Card className="p-5">
-        <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Promo Codes</h3>
-        <div className="divide-y divide-slate-100 dark:divide-slate-800">
-          {codes.map((c) => (
-            <div key={c.code} className="flex items-center justify-between py-2.5 text-sm">
-              <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-mono text-xs font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-200">
-                {c.code}
-              </span>
-              <span className="muted text-xs">
-                {c.pct}% off · {c.uses} redemptions
-              </span>
-            </div>
-          ))}
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Promo Codes
+            </h3>
+            <p className="muted text-xs">
+              Codes created here apply directly during attendee checkout for your events.
+            </p>
+          </div>
+          <Badge tone="brand">{dash.promoCodes.length} codes</Badge>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2 sm:flex-nowrap">
+
+        {dash.promoCodes.length === 0 ? (
+          <p className="muted py-3 text-xs">No promo codes created yet.</p>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {dash.promoCodes.map((c: any) => (
+              <div key={c._id} className="flex items-center justify-between py-2.5 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-mono text-xs font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-200">
+                    {c.code}
+                  </span>
+                  <Badge tone={c.active ? 'neon' : 'muted'}>
+                    {c.active ? `${c.discountPct}% OFF` : 'Paused'}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="muted text-xs">{c.uses} redemptions</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        await convex.mutation(api.events.togglePromoCode, {
+                          userId: user._id as any,
+                          promoId: c._id,
+                        });
+                      } catch (err: any) {
+                        toast(err?.message || 'Unable to update promo code.');
+                      }
+                    }}
+                  >
+                    {c.active ? 'Pause' : 'Activate'}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!user.emailVerified) {
+              setVerifyModalOpen(true);
+              return;
+            }
+            if (!code.trim()) return;
+            setSavingPromo(true);
+            try {
+              await convex.mutation(api.events.createPromoCode, {
+                userId: user._id as any,
+                code: code.trim(),
+                discountPct: pct,
+                eventId: selectedPromoEvent ? (selectedPromoEvent as any) : undefined,
+              });
+              setCode('');
+              toast('Promo code saved to Convex!');
+            } catch (err: any) {
+              toast(err?.message || 'Failed to create promo code.');
+            } finally {
+              setSavingPromo(false);
+            }
+          }}
+          className="mt-4 flex flex-wrap gap-2 sm:flex-nowrap"
+        >
           <input
             aria-label="Promo code"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="NEWCODE"
+            placeholder="CODE2026"
             className={`${inputCls} flex-1 font-mono`}
           />
+          <select
+            aria-label="Target event"
+            value={selectedPromoEvent}
+            onChange={(e) => setSelectedPromoEvent(e.target.value)}
+            className={`${inputCls} sm:w-48`}
+          >
+            <option value="">All My Events</option>
+            {mine.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.title}
+              </option>
+            ))}
+          </select>
           <input
             aria-label="Discount percent"
             type="number"
@@ -325,491 +579,1271 @@ function Dashboard() {
             onChange={(e) => setPct(+e.target.value)}
             className={`${inputCls} w-24`}
           />
-          <Button
-            disabled={!code.trim()}
-            onClick={() => {
-              setCodes([...codes, { code: code.trim(), pct, uses: 0 }]);
-              setCode('');
-              toast('Promo code created');
-            }}
-          >
-            Add Code
+          <Button type="submit" disabled={!code.trim() || savingPromo}>
+            {savingPromo ? 'Saving…' : 'Add Code'}
           </Button>
-        </div>
+        </form>
       </Card>
     </div>
   );
 }
 
-function Create({ onDone }: { onDone: () => void }) {
-  const add = useStore((s) => s.addCustomEvent);
-  const user = useStore((s) => s.user);
+function Create({ user, onDone }: { user: SessionUser; onDone: () => void }) {
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
-  const allSpaces = useAllSpaces();
+  const { spaces } = useSpacesQuery();
+
+  const tomorrowIso = useMemo(() => {
+    const d = new Date(Date.now() + 3 * 86400000);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  const [useRegisteredSpace, setUseRegisteredSpace] = useState(spaces.length > 0);
   const [f, setF] = useState({
     title: '',
     category: 'Concerts' as Category,
     vibe: 'Energetic' as Vibe,
     area: 'Wuse',
-    space: allSpaces[0]?.id || 'space1',
-    date: '',
-    start: '19:00',
-    end: '22:00',
-    desc: '',
+    spaceId: '',
+    customVenueName: '',
+    customAddress: '',
+    date: tomorrowIso,
+    startTime: '19:00',
+    endTime: '23:00',
+    description: '',
+    imageUrl: '',
   });
-  const [tiers, setTiers] = useState([{ name: 'General', price: 5000, qty: 200 }]);
-  const set = (k: string, v: string) => setF((p) => ({ ...p, [k]: v }));
-  const valid = f.title.trim() && f.date && tiers.every((t) => t.name.trim() && t.qty > 0);
+  const [tiers, setTiers] = useState([{ name: 'Regular', price: 10000, qty: 150 }]);
+  const [publishing, setPublishing] = useState(false);
+
+  useEffect(() => {
+    if (spaces.length > 0 && !f.spaceId) {
+      setF((prev) => ({ ...prev, spaceId: spaces[0].id, area: spaces[0].area }));
+      setUseRegisteredSpace(true);
+    }
+  }, [spaces, f.spaceId]);
+
   const postingFee = computeOrganiserPostingFee(tiers);
 
-  const submit = async () => {
-    if (!user?.emailVerified) {
-      setVerifyModalOpen(true);
-      toast('Please verify your organizer email before publishing events.');
+  const handleFlyerUpload = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxW = 960;
+        const scale = Math.min(1, maxW / img.width);
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          setF((prev) => ({ ...prev, imageUrl: canvas.toDataURL('image/jpeg', 0.82) }));
+          toast('Event flyer attached.');
+        }
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const publishToConvex = async () => {
+    const selectedSpace = useRegisteredSpace
+      ? spaces.find((s) => s.id === f.spaceId)
+      : undefined;
+
+    const areaKey = selectedSpace ? selectedSpace.area : f.area;
+    const areaMeta = AREAS[areaKey] ?? AREAS.Wuse;
+    const venueName = selectedSpace ? selectedSpace.name : f.customVenueName.trim();
+    const address = selectedSpace ? selectedSpace.address : f.customAddress.trim();
+
+    if (!venueName || !address) {
+      toast('Please specify a valid venue name and street address.');
       return;
     }
-    const a = AREAS[f.area];
-    const start = new Date(`${f.date}T${f.start}`);
-    let end = new Date(`${f.date}T${f.end}`);
-    if (end <= start) end = new Date(end.getTime() + 864e5);
-    const id = 'c' + Date.now();
-    const ev: CEvent = {
-      id,
+
+    const startDate = new Date(`${f.date}T${f.startTime}:00`);
+    let endDate = new Date(`${f.date}T${f.endTime}:00`);
+    if (endDate <= startDate) {
+      endDate = new Date(startDate.getTime() + 4 * 3600 * 1000);
+    }
+
+    const formattedTiers = tiers.map((t, idx) => ({
+      id: `tier_${idx + 1}_${Date.now().toString(36)}`,
+      name: t.name.trim() || `Tier ${idx + 1}`,
+      price: Math.max(0, Number(t.price) || 0),
+      total: Math.max(1, Number(t.qty) || 1),
+      remaining: Math.max(1, Number(t.qty) || 1),
+    }));
+
+    const totalCap = formattedTiers.reduce((s, t) => s + t.total, 0);
+
+    await convex.mutation(api.events.create, {
+      userId: user._id as any,
       title: f.title.trim(),
+      description:
+        f.description.trim() || `${f.title.trim()} hosted at ${venueName}, ${areaKey}.`,
       category: f.category,
+      city: selectedSpace ? selectedSpace.city : areaMeta.city,
+      area: areaKey,
+      spaceId: selectedSpace ? (selectedSpace.id as any) : undefined,
+      venueName,
+      address,
+      lat: selectedSpace ? selectedSpace.lat : areaMeta.lat,
+      lng: selectedSpace ? selectedSpace.lng : areaMeta.lng,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      image: f.imageUrl.trim() || CATEGORY_PHOTO[f.category],
+      tags: [f.category, areaKey],
+      clashTags: [f.category],
       vibe: f.vibe,
-      city: a.city,
-      area: f.area,
-      spaceId: f.space,
-      organiserId: 'org1',
-      start: start.toISOString(),
-      end: end.toISOString(),
-      image: CATEGORY_PHOTO[f.category],
-      description: f.desc.trim() || 'New verified experience on COORDINA.',
-      tiers: tiers.map((t, i) => ({
-        id: `${id}-t${i}`,
-        name: t.name.trim(),
-        price: t.price,
-        remaining: t.qty,
-        total: t.qty,
-      })),
-      lat: a.lat,
-      lng: a.lng,
-      verificationStatus: 'Organizer Verified',
-    };
-    add(ev);
+      tiers: formattedTiers,
+      isFree: postingFee.isFree,
+      expectedAttendance: totalCap,
+    });
 
-    try {
-      await convex.mutation(api.events.create, {
-        title: ev.title,
-        description: ev.description,
-        category: ev.category,
-        city: ev.city,
-        area: ev.area,
-        spaceId: ev.spaceId.startsWith('space') ? undefined : (ev.spaceId as any),
-        venueName: allSpaces.find((s) => s.id === ev.spaceId)?.name || ev.area,
-        address: `${ev.area}, ${ev.city}`,
-        start: ev.start,
-        end: ev.end,
-        organizerId: 'org1' as any,
-        image: ev.image,
-        tags: [ev.category, ev.area],
-        clashTags: [ev.category.toLowerCase(), ev.area.toLowerCase()],
-        vibe: ev.vibe,
-        tiers: ev.tiers,
-        isFree: postingFee.isFree,
-        expectedAttendance: postingFee.totalCapacity || 100,
-      });
-    } catch (e) {
-      console.warn('Convex event sync:', e);
-    }
-
-    if (postingFee.isFree) {
-      toast(`Free Event submitted! Organiser hosting fee of ${naira(postingFee.postingFee)} (${postingFee.totalCapacity} guests @ ₦2,500/100) billed.`);
-    } else {
-      toast('Paid Event submitted! ₦0 organiser fee (attendees pay processing at checkout).');
-    }
+    toast('Event published to Convex! Complete remote KYC & venue verification next.');
     onDone();
   };
 
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user.emailVerified) {
+      toast('Verify your organizer email before publishing events.');
+      setVerifyModalOpen(true);
+      return;
+    }
+    if (!f.title.trim()) return;
+
+    setPublishing(true);
+    try {
+      if (postingFee.isFree && postingFee.postingFee > 0) {
+        const ref = `CRD-HOST-${Date.now()}`;
+        const payRes = await payWithPaystack({
+          email: user.email,
+          amountKobo: postingFee.postingFee * 100,
+          reference: ref,
+          metadata: {
+            purpose: 'free_event_capacity_fee',
+            organizerId: user.organizerId,
+            eventTitle: f.title.trim(),
+          },
+          onSuccess: async () => {
+            try {
+              await publishToConvex();
+            } catch (err: any) {
+              toast(err?.message || 'Payment succeeded, but event creation failed.');
+            } finally {
+              setPublishing(false);
+            }
+          },
+          onCancel: () => {
+            setPublishing(false);
+            toast('Capacity hosting fee payment cancelled.');
+          },
+        });
+        if (!payRes.launched) {
+          setPublishing(false);
+          toast(payRes.error || 'Paystack gateway unavailable.');
+        }
+        return;
+      }
+
+      await publishToConvex();
+    } catch (err: any) {
+      toast(err?.message || 'Unable to publish event.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   return (
-    <Card className="mx-auto max-w-2xl space-y-4 p-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Create New Event</h2>
-        <Badge tone="brand">{f.category}</Badge>
-      </div>
-
-      {/* Basic Verification Notice */}
-      <div className="flex items-center justify-between rounded-xl border border-brand-500/20 bg-brand-50/60 p-3 text-xs text-brand-900 dark:border-brand-500/30 dark:bg-brand-950/30 dark:text-brand-200">
-        <div className="flex items-center gap-2">
-          <Icon name="verified_user" className="text-brand-500 text-base shrink-0" />
-          <span>Basic Planner Verification: All event organizers must complete CAC, Director NIN, and Live Face Liveness Scan in the Verification tab to earn verified badges.</span>
+    <form onSubmit={submit} className="mx-auto max-w-2xl space-y-4">
+      <Card className="space-y-4 p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            Event Details
+          </h3>
+          <Badge tone="brand">Live Convex Listing</Badge>
         </div>
-      </div>
 
-      <Cover gradient={CATEGORY_PHOTO[f.category]} category={f.category} label={f.category} className="h-40 w-full rounded-2xl" />
-
-      <div>
-        <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Event Title</label>
         <input
-          aria-label="Title"
-          placeholder="e.g. Sunset Jazz & Cocktails"
-          className={inputCls}
+          aria-label="Event title"
+          required
           value={f.title}
-          onChange={(e) => set('title', e.target.value)}
+          onChange={(e) => setF({ ...f, title: e.target.value })}
+          placeholder="Event title"
+          className={inputCls}
         />
-      </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Category</label>
-          <select aria-label="Category" className={inputCls} value={f.category} onChange={(e) => set('category', e.target.value)}>
+        <div className="grid grid-cols-2 gap-3">
+          <select
+            aria-label="Category"
+            value={f.category}
+            onChange={(e) => setF({ ...f, category: e.target.value as Category })}
+            className={inputCls}
+          >
             {CATEGORIES.map((c) => (
-              <option key={c}>{c}</option>
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
           </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Vibe</label>
-          <select aria-label="Vibe" className={inputCls} value={f.vibe} onChange={(e) => set('vibe', e.target.value)}>
-            {['Chill', 'Energetic', 'Classy', 'Family', 'Creative'].map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Neighbourhood</label>
-          <select aria-label="Area" className={inputCls} value={f.area} onChange={(e) => set('area', e.target.value)}>
-            {Object.keys(AREAS).map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Verified Space</label>
-          <select aria-label="Venue" className={inputCls} value={f.space} onChange={(e) => set('space', e.target.value)}>
-            {allSpaces.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.area})
+          <select
+            aria-label="Vibe"
+            value={f.vibe}
+            onChange={(e) => setF({ ...f, vibe: e.target.value as Vibe })}
+            className={inputCls}
+          >
+            {(['Chill', 'Energetic', 'Intimate', 'Family'] as Vibe[]).map((v) => (
+              <option key={v} value={v}>
+                {v}
               </option>
             ))}
           </select>
         </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Date</label>
-          <input aria-label="Date" type="date" className={inputCls} value={f.date} onChange={(e) => set('date', e.target.value)} />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Starts</label>
-            <input aria-label="Start time" type="time" className={inputCls} value={f.start} onChange={(e) => set('start', e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Ends</label>
-            <input aria-label="End time" type="time" className={inputCls} value={f.end} onChange={(e) => set('end', e.target.value)} />
-          </div>
-        </div>
-      </div>
 
-      <div>
-        <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Description</label>
+        {/* Venue Selection: Registered Space vs Custom Venue */}
+        <div className="space-y-3 rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Venue Location
+            </span>
+            {spaces.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setUseRegisteredSpace((v) => !v)}
+                className="text-xs font-semibold text-brand-500 hover:underline"
+              >
+                {useRegisteredSpace ? 'Enter custom venue instead' : 'Choose from registered spaces'}
+              </button>
+            )}
+          </div>
+
+          {useRegisteredSpace && spaces.length > 0 ? (
+            <select
+              aria-label="Venue"
+              value={f.spaceId}
+              onChange={(e) => {
+                const sp = spaces.find((s) => s.id === e.target.value);
+                setF({
+                  ...f,
+                  spaceId: e.target.value,
+                  area: sp ? sp.area : f.area,
+                });
+              }}
+              className={inputCls}
+            >
+              {spaces.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} — {s.area}, {s.city} {s.verified ? '(Verified)' : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <select
+                aria-label="District"
+                value={f.area}
+                onChange={(e) => setF({ ...f, area: e.target.value })}
+                className={inputCls}
+              >
+                {Object.entries(AREAS).map(([area, meta]) => (
+                  <option key={area} value={area}>
+                    {area} ({meta.city})
+                  </option>
+                ))}
+              </select>
+              <input
+                required
+                value={f.customVenueName}
+                onChange={(e) => setF({ ...f, customVenueName: e.target.value })}
+                placeholder="Venue / Hall Name"
+                className={inputCls}
+              />
+              <input
+                required
+                value={f.customAddress}
+                onChange={(e) => setF({ ...f, customAddress: e.target.value })}
+                placeholder="Full street address"
+                className={`${inputCls} sm:col-span-2`}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <input
+            aria-label="Date"
+            type="date"
+            required
+            value={f.date}
+            onChange={(e) => setF({ ...f, date: e.target.value })}
+            className={inputCls}
+          />
+          <input
+            aria-label="Start time"
+            type="time"
+            required
+            value={f.startTime}
+            onChange={(e) => setF({ ...f, startTime: e.target.value })}
+            className={inputCls}
+          />
+          <input
+            aria-label="End time"
+            type="time"
+            required
+            value={f.endTime}
+            onChange={(e) => setF({ ...f, endTime: e.target.value })}
+            className={inputCls}
+          />
+        </div>
+
         <textarea
           aria-label="Description"
-          placeholder="Tell guests what to expect, dress code, parking, and lineup..."
-          className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-100"
           rows={3}
-          value={f.desc}
-          onChange={(e) => set('desc', e.target.value)}
+          required
+          value={f.description}
+          onChange={(e) => setF({ ...f, description: e.target.value })}
+          placeholder="Describe the lineup, dress code, parking, and guest experience…"
+          className="w-full rounded-xl border border-slate-200 bg-white p-3.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-100"
         />
-      </div>
 
-      <div className="space-y-2.5 pt-1">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Ticket Tiers (₦)</h3>
-            <p className="muted text-[11px]">Set price to ₦0 for free admissions</p>
+            <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Upload Event Flyer (JPG/PNG)
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => handleFlyerUpload(e.target.files?.[0])}
+              className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-brand-600 dark:file:bg-brand-500/15 dark:file:text-brand-300"
+            />
           </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setTiers([{ name: 'Free RSVP', price: 0, qty: 100 }])}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
-            >
-              Make Free (₦0)
-            </button>
-            <Button variant="outline" size="sm" onClick={() => setTiers([...tiers, { name: 'VIP', price: 20000, qty: 50 }])}>
-              + Add Tier
-            </Button>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+              Or Flyer Image URL
+            </label>
+            <input
+              value={f.imageUrl.startsWith('data:') ? '' : f.imageUrl}
+              onChange={(e) => setF({ ...f, imageUrl: e.target.value })}
+              placeholder="https://..."
+              className={inputCls}
+            />
           </div>
         </div>
+      </Card>
+
+      <Card className="space-y-3 p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            Ticket Tiers
+          </h3>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setTiers([...tiers, { name: 'VIP', price: 30000, qty: 40 }])}
+          >
+            <Icon name="add" /> Add Tier
+          </Button>
+        </div>
         {tiers.map((t, i) => (
-          <div key={i} className="grid grid-cols-[1fr_110px_90px_36px] items-center gap-2">
+          <div key={i} className="grid grid-cols-12 items-center gap-2">
             <input
-              aria-label="Tier name"
-              placeholder="Tier"
-              className={inputCls}
+              aria-label={`Tier ${i + 1} name`}
               value={t.name}
-              onChange={(e) => setTiers(tiers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+              onChange={(e) =>
+                setTiers(tiers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
+              }
+              placeholder="Tier"
+              className={`${inputCls} col-span-5`}
             />
             <input
-              aria-label="Price"
+              aria-label={`Tier ${i + 1} price`}
               type="number"
               min={0}
-              className={inputCls}
               value={t.price}
-              onChange={(e) => setTiers(tiers.map((x, j) => (j === i ? { ...x, price: +e.target.value } : x)))}
+              onChange={(e) =>
+                setTiers(tiers.map((x, j) => (j === i ? { ...x, price: +e.target.value } : x)))
+              }
+              placeholder="₦ Price"
+              className={`${inputCls} col-span-4`}
             />
             <input
-              aria-label="Quantity"
+              aria-label={`Tier ${i + 1} quantity`}
               type="number"
               min={1}
-              className={inputCls}
               value={t.qty}
-              onChange={(e) => setTiers(tiers.map((x, j) => (j === i ? { ...x, qty: +e.target.value } : x)))}
+              onChange={(e) =>
+                setTiers(tiers.map((x, j) => (j === i ? { ...x, qty: +e.target.value } : x)))
+              }
+              placeholder="Qty"
+              className={`${inputCls} col-span-2`}
             />
-            <button
-              type="button"
-              aria-label="Remove tier"
-              disabled={tiers.length === 1}
-              onClick={() => setTiers(tiers.filter((_, j) => j !== i))}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:text-slate-400 dark:hover:bg-slate-800"
-            >
-              <Icon name="close" />
-            </button>
+            {tiers.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setTiers(tiers.filter((_, j) => j !== i))}
+                className="col-span-1 flex h-9 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+              >
+                <Icon name="delete" className="text-base" />
+              </button>
+            )}
           </div>
         ))}
-      </div>
+      </Card>
 
-      {/* COORDINA Platform Fee Breakdown */}
-      <div
-        className={`rounded-2xl border p-4 transition-colors ${postingFee.isFree
-            ? 'border-brand-500/30 bg-brand-500/5 dark:bg-brand-500/10'
-            : 'border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-midnight-900/60'
-          }`}
+      <Card
+        className={`p-5 ${
+          postingFee.isFree ? 'border-amber-500/40 bg-amber-500/5' : 'border-emerald-500/30 bg-emerald-500/5'
+        }`}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2.5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
             <span
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${postingFee.isFree
-                  ? 'bg-brand-500 text-white'
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                postingFee.isFree
+                  ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
                   : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                }`}
+              }`}
             >
-              <Icon name={postingFee.isFree ? 'payments' : 'check_circle'} className="text-base" />
+              <Icon name={postingFee.isFree ? 'groups' : 'verified'} />
             </span>
             <div>
-              <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                {postingFee.isFree ? 'Free Event Organiser Hosting Fee' : 'Paid Event: ₦0 Upfront Posting Fee'}
-              </p>
-              <p className="muted text-[11px]">
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 {postingFee.isFree
-                  ? `₦${FREE_EVENT_RATE_PER_100.toLocaleString('en-NG')} per 100 persons capacity (${postingFee.hundredBlocks} block${postingFee.hundredBlocks > 1 ? 's' : ''} for ${postingFee.totalCapacity} guests)`
-                  : 'Attendees pay standard 5% + ₦100 processing fee during checkout'}
+                  ? 'Free Event Organiser Hosting Fee'
+                  : 'Paid Event — ₦0 Upfront Organiser Fee'}
+              </h4>
+              <p className="muted mt-1 text-xs leading-relaxed">
+                {postingFee.isFree
+                  ? `Free events are billed ₦${FREE_EVENT_RATE_PER_100.toLocaleString()} per 100 attendees capacity (${postingFee.totalCapacity} capacity = ${postingFee.hundredBlocks} × ₦${FREE_EVENT_RATE_PER_100.toLocaleString()}). Attendees RSVP free.`
+                  : 'Paid events cost ₦0 upfront to publish. Standard platform service fees are transparently handled at attendee checkout.'}
               </p>
             </div>
           </div>
-          <div className="text-right">
-            <span className="text-base font-bold text-slate-900 dark:text-slate-100">
-              {postingFee.isFree ? naira(postingFee.postingFee) : '₦0'}
-            </span>
-            <span className="block text-[10px] font-medium text-brand-600 dark:text-brand-400">
-              {postingFee.isFree ? 'Attendee Fee: ₦0 Free' : 'Free to Post'}
+          <div className="shrink-0 text-right">
+            <span className="muted block text-[11px]">Due on Publish</span>
+            <span className="text-lg font-bold text-slate-900 dark:text-white">
+              {postingFee.postingFee === 0 ? '₦0' : naira(postingFee.postingFee)}
             </span>
           </div>
         </div>
+      </Card>
 
-        {postingFee.isFree ? (
-          <p className="mt-3 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-            For free events, all attendees RSVP with <strong>₦0 attendee processing fee</strong>. The organiser posting fee of <strong>{naira(postingFee.postingFee)}</strong> covers platform verification, cryptographic QR ticket generation, and gate scanner support.
-          </p>
-        ) : (
-          <p className="mt-2.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-            Organisers post paid events for free. COORDINA deducts platform processing and gateway fees directly at ticket checkout.
-          </p>
-        )}
-      </div>
-
-      {!user?.emailVerified ? (
-        <div className="space-y-2.5">
-          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
-            <p className="font-semibold flex items-center gap-1.5">
-              <Icon name="lock" className="text-sm" />
-              <span>Email Verification Required</span>
-            </p>
-            <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300">
-              Your account must be verified before publishing events to the public marketplace.
-            </p>
-          </div>
-          <Button full size="lg" className="bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-md shadow-amber-600/20" onClick={() => setVerifyModalOpen(true)}>
-            <Icon name="lock" /> Verify Email to Publish Event
-          </Button>
-        </div>
-      ) : (
-        <Button full size="lg" disabled={!valid} onClick={submit}>
-          {postingFee.isFree ? `Pay ${naira(postingFee.postingFee)} & Publish Free Event` : 'Publish Event (Free to Post)'}
-        </Button>
-      )}
-    </Card>
+      <Button full size="lg" type="submit" disabled={publishing}>
+        {publishing
+          ? 'Publishing…'
+          : postingFee.isFree && postingFee.postingFee > 0
+          ? `Pay ${naira(postingFee.postingFee)} & Publish Event`
+          : 'Publish Event'}
+      </Button>
+    </form>
   );
 }
 
-function Scanner() {
-  return <GateScanner />;
+function OrganizerVerificationPortal({
+  user,
+  onCreateClick,
+}: {
+  user: SessionUser;
+  onCreateClick: () => void;
+}) {
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+  const verState = useQuery(api.verification.getOrganizerVerificationState, {
+    userId: user._id as any,
+  });
+  const dash = useQuery(api.events.getOrganizerDashboard, { userId: user._id as any });
+  const mine = useMemo(() => (dash?.events ?? []).map(mapConvexEvent), [dash?.events]);
+
+  const [selectedEventId, setSelectedEventId] = useState<string>('');
+  const [businessName, setBusinessName] = useState('');
+  const [cac, setCac] = useState('');
+  const [director, setDirector] = useState('');
+  const [nin, setNin] = useState('');
+  const [phone, setPhone] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+
+  const [venueEmail, setVenueEmail] = useState('');
+  const [venuePhone, setVenuePhone] = useState('');
+  const [biometricScan, setBiometricScan] = useState<BiometricScanResult | null>(null);
+  const [docs, setDocs] = useState<
+    { id: string; name: string; type: string; url: string; uploadedAt: string; verified: boolean }[]
+  >([]);
+  const [docType, setDocType] = useState('Venue Booking');
+  const [submitting, setSubmitting] = useState(false);
+  const [hydratedOrg, setHydratedOrg] = useState(false);
+
+  // Hydrate ONLY from this authenticated organizer's own Convex record
+  useEffect(() => {
+    if (verState?.organizer && !hydratedOrg) {
+      const org = verState.organizer;
+      setBusinessName(org.businessName || user.name || '');
+      setCac(org.cacNumber || '');
+      setDirector(org.directorName || '');
+      setNin(org.nin || '');
+      setPhone(org.contactPhone || user.phone || '');
+      if (user.phoneVerified && (org.contactPhone || user.phone)) {
+        setOtpVerified(true);
+      }
+      if (org.faceBiometricVerified && org.faceSnapshotUrl) {
+        setBiometricScan({
+          verified: true,
+          faceSnapshotUrl: org.faceSnapshotUrl,
+          biometricToken: org.biometricToken || '',
+          confidence: org.biometricConfidence || 98.8,
+          scannedAt: new Date().toISOString(),
+        });
+      }
+      setHydratedOrg(true);
+    }
+  }, [verState?.organizer, hydratedOrg, user.name, user.phone, user.phoneVerified]);
+
+  useEffect(() => {
+    if (mine.length > 0 && !selectedEventId) {
+      const unverifiedFirst = mine.find((e) => e.verificationStatus === 'Unverified') ?? mine[0];
+      setSelectedEventId(unverifiedFirst.id);
+    }
+  }, [mine, selectedEventId]);
+
+  const blacklistCheck = useQuery(
+    api.reports.checkIdentityIsBlacklisted,
+    user.email || phone || nin
+      ? {
+          email: user.email,
+          phone: phone.trim() || undefined,
+          nin: nin.trim() || undefined,
+        }
+      : 'skip'
+  );
+
+  const selectedEvent = mine.find((e) => e.id === selectedEventId) ?? mine[0];
+
+  const liveRisk = calculateRiskAssessment({
+    isNewOrganizer: verState?.organizer?.status !== 'verified',
+    hasCacNumber: cac.trim().length > 3,
+    isBvnNinVerified: nin.trim().length >= 10 && otpVerified && Boolean(biometricScan?.verified),
+    isVenueConfirmed: false,
+    maxTicketPrice: selectedEvent
+      ? Math.max(0, ...selectedEvent.tiers.map((t) => t.price))
+      : 0,
+    startDate: selectedEvent?.start || new Date().toISOString(),
+    hasFlyer: true,
+    hasVenueAgreement: docs.some((d) => d.type === 'Venue Booking'),
+    organizerTrustScore: verState?.organizer?.status === 'verified' ? 4.8 : 4.1,
+  });
+
+  const handleSendOtp = async () => {
+    if (!phone.trim() || phone.trim().length < 8) {
+      toast('Enter a valid phone number first.');
+      return;
+    }
+    setSendingOtp(true);
+    try {
+      const res = await convex.mutation(api.auth.requestPhoneOtp, {
+        userId: user._id as any,
+        phone: phone.trim(),
+      });
+      await sendEmail({
+        to: res.email,
+        subject: `Organizer Contact Verification Code: ${res.code} — COORDINA`,
+        html: `<p>Hi ${res.name},</p><p>Your 6-digit COORDINA Organizer KYC contact verification code for <strong>${res.phone}</strong> is:</p><h2 style="letter-spacing:4px;font-family:monospace;color:#4f46e5;">${res.code}</h2><p>Enter this code in the Organiser Studio Verification tab within 30 minutes.</p>`,
+      });
+      setOtpSent(true);
+      toast(`6-digit OTP sent to ${res.email} for ${res.phone}.`);
+    } catch (err: any) {
+      toast(err?.message || 'Unable to send verification code.');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode.trim()) return;
+    setVerifyingOtp(true);
+    try {
+      await convex.mutation(api.auth.verifyPhoneOtp, {
+        userId: user._id as any,
+        phone: phone.trim(),
+        code: otpCode.trim(),
+      });
+      setOtpVerified(true);
+      setOtpSent(false);
+      setOtpCode('');
+      toast('Organizer phone & contact OTP verified!');
+    } catch (err: any) {
+      toast(err?.message || 'Invalid OTP code.');
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
+
+  const handleDocFileSelect = (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast('Please upload a PDF or image under 2 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDocs((prev) => [
+        ...prev,
+        {
+          id: `doc_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: file.name,
+          type: docType,
+          url: String(reader.result),
+          uploadedAt: new Date().toISOString(),
+          verified: false,
+        },
+      ]);
+      toast(`Attached ${file.name} (${docType}).`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const isKycComplete =
+    Boolean(selectedEvent) &&
+    businessName.trim().length >= 2 &&
+    cac.trim().length > 3 &&
+    director.trim().length > 2 &&
+    nin.trim().length >= 8 &&
+    otpVerified &&
+    Boolean(biometricScan?.verified) &&
+    venueEmail.trim().includes('@') &&
+    docs.length > 0;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user.emailVerified) {
+      setVerifyModalOpen(true);
+      return;
+    }
+    if (!selectedEvent || !biometricScan?.verified) return;
+    if (blacklistCheck?.blacklisted) {
+      toast(`Restricted: ${blacklistCheck.reason}`);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await convex.mutation(api.verification.submitEventVerification, {
+        userId: user._id as any,
+        eventId: selectedEvent.id as any,
+        businessName: businessName.trim(),
+        cacNumber: cac.trim(),
+        directorName: director.trim(),
+        nin: nin.trim(),
+        phone: phone.trim(),
+        phoneOtpVerified: otpVerified,
+        biometricScan: {
+          verified: biometricScan.verified,
+          snapshotDataUrl: biometricScan.faceSnapshotUrl,
+          token: biometricScan.biometricToken,
+          confidenceScore: biometricScan.confidence,
+        },
+        venueEmail: venueEmail.trim(),
+        venuePhone: venuePhone.trim() || undefined,
+        documents: docs,
+      });
+
+      await sendVenueConfirmationRequestEmail({
+        venueEmail: venueEmail.trim(),
+        venueName: res.venueName,
+        eventTitle: res.eventTitle,
+        organizerName: res.organizerName,
+        date: fmtDate(selectedEvent.start),
+        token: res.token,
+      });
+
+      toast('Remote KYC & Venue Confirmation token dispatched!');
+    } catch (err: any) {
+      toast(err?.message || 'Failed to submit verification dossier.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (verState === undefined || dash === undefined) {
+    return <Skeleton className="h-72" />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-l-4 border-l-brand-500 p-5">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+          Remote Event &amp; Organizer Verification
+        </h2>
+        <p className="muted mt-1 text-xs leading-relaxed">
+          All event planners must pass basic KYC verification—including CAC registration, NIN/BVN check, live camera facial liveness scan, contact OTP, and direct venue confirmation—to earn Verified badges and unlock bank payouts.
+        </p>
+      </Card>
+
+      {/* Submitted Verifications for THIS Organizer Only */}
+      {verState?.verifications && verState.verifications.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            My Verification Submissions
+          </h3>
+          {verState.verifications.map((v: any) => (
+            <Card key={v._id} className="p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {v.eventTitle}
+                    </span>
+                    <VerificationBadge status={v.eventVerificationStatus} size="sm" />
+                  </div>
+                  <p className="muted mt-1 text-xs">
+                    Venue: <strong>{v.venueName}</strong> ({v.venueEmail}) · Venue Response:{' '}
+                    <strong
+                      className={
+                        v.venueConfirmationStatus === 'confirmed'
+                          ? 'text-emerald-600'
+                          : v.venueConfirmationStatus === 'disputed'
+                          ? 'text-rose-600'
+                          : 'text-amber-600'
+                      }
+                    >
+                      {v.venueConfirmationStatus}
+                    </strong>
+                  </p>
+                  {v.reviewerNotes && (
+                    <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
+                      Compliance Note: {v.reviewerNotes}
+                    </p>
+                  )}
+                </div>
+                {v.venueToken && (
+                  <Link
+                    to={`/venue-portal/${v.venueToken}`}
+                    className="inline-flex items-center gap-1 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 dark:bg-brand-500/15 dark:text-brand-300"
+                  >
+                    <Icon name="open_in_new" className="text-sm" />
+                    Venue Token Link
+                  </Link>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {mine.length === 0 ? (
+        <EmptyState
+          icon="verified_user"
+          title="Create an Event Before Requesting Verification"
+          body="Publish your event schedule and venue first, then submit your KYC & venue booking confirmation dossier here."
+          cta={
+            <Button onClick={onCreateClick}>
+              <Icon name="add_circle" /> Create Event
+            </Button>
+          }
+        />
+      ) : (
+        <Card className="p-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            Submit Event for Remote Verification
+          </h3>
+          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            {blacklistCheck?.blacklisted && (
+              <div className="rounded-2xl border-2 border-rose-500 bg-rose-50 p-4 text-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+                <div className="flex items-start gap-3">
+                  <Icon name="gpp_bad" className="mt-0.5 shrink-0 text-2xl text-rose-600" />
+                  <div>
+                    <span className="rounded-full bg-rose-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                      Identity Restricted ({blacklistCheck.matchedField})
+                    </span>
+                    <p className="mt-2 text-xs font-medium">"{blacklistCheck.reason}"</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Select Your Event
+                </label>
+                <select
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className={inputCls}
+                >
+                  {mine.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.title} ({e.venueName}, {e.city}) — {e.verificationStatus}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Registered Business / Brand Name
+                </label>
+                <input
+                  required
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  placeholder="Registered corporate or brand name"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  CAC Registration (RC / BN)
+                </label>
+                <input
+                  required
+                  value={cac}
+                  onChange={(e) => setCac(e.target.value)}
+                  placeholder="RC-0000000 or BN-0000000"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Director Full Legal Name
+                </label>
+                <input
+                  required
+                  value={director}
+                  onChange={(e) => setDirector(e.target.value)}
+                  placeholder="Full legal name on ID"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Director NIN / BVN
+                </label>
+                <input
+                  required
+                  value={nin}
+                  onChange={(e) => setNin(e.target.value)}
+                  placeholder="11-digit NIN or BVN"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            {/* Real Contact Phone + Convex 6-Digit OTP */}
+            <div className="rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Organizer Contact Phone &amp; 6-Digit OTP Verification
+                </label>
+                {otpVerified ? (
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    ✓ Contact Verified
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={sendingOtp}
+                    onClick={handleSendOtp}
+                    className="text-xs font-semibold text-brand-500 hover:underline"
+                  >
+                    {sendingOtp ? 'Sending Code…' : otpSent ? 'Resend 6-Digit Code' : 'Send Verification Code'}
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <input
+                  type="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    setOtpVerified(false);
+                  }}
+                  placeholder="+234 800 000 0000"
+                  className={inputCls}
+                />
+                {otpSent && !otpVerified && (
+                  <div className="flex gap-2">
+                    <input
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      placeholder="Enter 6-digit OTP"
+                      maxLength={6}
+                      className={`${inputCls} font-mono`}
+                    />
+                    <Button
+                      type="button"
+                      disabled={verifyingOtp || otpCode.trim().length < 6}
+                      onClick={handleVerifyOtp}
+                    >
+                      {verifyingOtp ? 'Checking…' : 'Verify'}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Venue Representative Contact */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Venue Manager Official Email (Receives Confirmation Link)
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={venueEmail}
+                  onChange={(e) => setVenueEmail(e.target.value)}
+                  placeholder="bookings@venue-domain.com"
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Venue Desk Phone
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={venuePhone}
+                  onChange={(e) => setVenuePhone(e.target.value)}
+                  placeholder="+234 800 000 0000"
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            {/* Supporting KYC & Venue Receipt Upload */}
+            <div className="rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-900 dark:text-white">
+                    Supporting KYC &amp; Venue Booking Evidence ({docs.length} attached)
+                  </h4>
+                  <p className="muted text-[11px]">
+                    Attach your CAC certificate, Government ID, or signed Venue Booking Receipt (PDF/JPG/PNG under 2 MB).
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <select
+                  value={docType}
+                  onChange={(e) => setDocType(e.target.value)}
+                  className={`${inputCls} sm:w-52`}
+                >
+                  <option value="Venue Booking">Venue Booking</option>
+                  <option value="CAC Certificate">CAC Certificate</option>
+                  <option value="Government ID">Government ID</option>
+                  <option value="Event Flyer">Event Flyer</option>
+                </select>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => handleDocFileSelect(e.target.files?.[0])}
+                  className="text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-brand-600 dark:file:bg-brand-500/15 dark:file:text-brand-300"
+                />
+              </div>
+
+              {docs.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {docs.map((d) => (
+                    <div
+                      key={d.id}
+                      className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5 text-xs dark:bg-midnight-950"
+                    >
+                      <span>
+                        <strong>{d.type}:</strong> {d.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setDocs(docs.filter((x) => x.id !== d.id))}
+                        className="text-rose-500 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Live Device Camera Face Biometric Scanner */}
+            <FaceLivenessScanner
+              directorName={director}
+              nin={nin}
+              onComplete={(res) => {
+                setBiometricScan(res);
+                toast('Live facial biometric liveness captured.');
+              }}
+              initialSnapshot={biometricScan?.faceSnapshotUrl}
+              initialToken={biometricScan?.biometricToken}
+              initialConfidence={biometricScan?.confidence}
+            />
+
+            {/* Pre-submission Automated Risk Preview */}
+            <div className="rounded-2xl border border-brand-500/30 bg-brand-500/5 p-4 dark:bg-brand-500/10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                    Automated Risk Engine Estimate: {liveRisk.score}/100 ({liveRisk.level} Risk)
+                  </p>
+                  <p className="muted mt-0.5 text-[11px]">
+                    Venue confirmation &amp; compliance review determine your final trust badge.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              full
+              size="lg"
+              type="submit"
+              disabled={!isKycComplete || submitting || Boolean(blacklistCheck?.blacklisted)}
+            >
+              {submitting
+                ? 'Submitting Verification Dossier…'
+                : !biometricScan?.verified
+                ? 'Complete Live Camera Face Scan to Continue'
+                : !otpVerified
+                ? 'Verify Contact OTP to Continue'
+                : docs.length === 0
+                ? 'Attach At Least One Supporting Document'
+                : 'Submit for Remote Verification'}
+            </Button>
+          </form>
+        </Card>
+      )}
+    </div>
+  );
 }
 
-function Payouts() {
-  const user = useStore((s) => s.user);
+function Payouts({
+  user,
+  onGoVerify,
+}: {
+  user: SessionUser;
+  onGoVerify: () => void;
+}) {
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
-  const [bankCode, setBankCode] = useState('058'); // GTBank default
-  const [accountNumber, setAccountNumber] = useState('0123456789');
-  const [verifying, setVerifying] = useState(false);
-  const [verifiedName, setVerifiedName] = useState<string | null>('COORDINA VENTURES LTD');
-  const [verifyErr, setVerifyErr] = useState<string | null>(null);
+  const summary = useQuery(api.payouts.getFinanceSummary, { userId: user._id as any });
 
-  const [payoutAmount, setPayoutAmount] = useState('250000');
-  const [transferring, setTransferring] = useState(false);
-  const [transferResult, setTransferResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [bankCode, setBankCode] = useState(COMMON_NIGERIAN_BANKS[0].code);
+  const [accountNumber, setAccountNumber] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [recipientCode, setRecipientCode] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [savingBank, setSavingBank] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [disbursing, setDisbursing] = useState(false);
+  const [bankHydrated, setBankHydrated] = useState(false);
 
-  const [liveBalance, setLiveBalance] = useState<number>(2100000);
-  const [balanceLoading, setBalanceLoading] = useState(false);
-
-  const [history, setHistory] = useState([
-    { d: 'Today (Instant Paystack)', ref: 'TRF_pstk_9482', a: 250000, s: 'Success' },
-    { d: '3 days ago', ref: 'PAY-9810', a: 1840000, s: 'Paid' },
-    { d: 'Last week', ref: 'PAY-9702', a: 920000, s: 'Paid' },
-  ]);
-
-  const refreshBalance = async () => {
-    setBalanceLoading(true);
-    const res = await getPaystackBalance();
-    if (res.success && res.balanceNaira > 0) {
-      setLiveBalance(res.balanceNaira);
+  useEffect(() => {
+    if (summary?.bankDetails && !bankHydrated) {
+      setBankCode(summary.bankDetails.bankCode || COMMON_NIGERIAN_BANKS[0].code);
+      setAccountNumber(summary.bankDetails.accountNumber);
+      setAccountName(summary.bankDetails.accountName);
+      setRecipientCode(summary.bankDetails.recipientCode || '');
+      setBankHydrated(true);
     }
-    setBalanceLoading(false);
-  };
+  }, [summary?.bankDetails, bankHydrated]);
 
-  const handleVerifyAccount = async () => {
-    if (accountNumber.trim().length !== 10) {
-      setVerifyErr('Account number must be exactly 10 digits');
-      return;
-    }
-    setVerifying(true);
-    setVerifyErr(null);
-    setVerifiedName(null);
+  if (summary === undefined) {
+    return <Skeleton className="h-64" />;
+  }
 
-    const res = await resolveAccount(accountNumber, bankCode);
-    setVerifying(false);
+  const available = summary?.availableBalance ?? 0;
+  const grossEarned = summary?.grossEarned ?? 0;
+  const totalDisbursed = summary?.totalDisbursed ?? 0;
+  const selectedBank =
+    COMMON_NIGERIAN_BANKS.find((b) => b.code === bankCode) ?? COMMON_NIGERIAN_BANKS[0];
 
-    if (res.success && res.accountName) {
-      setVerifiedName(res.accountName);
-      toast(`Account verified: ${res.accountName}`);
-    } else {
-      setVerifyErr(res.error || 'Could not resolve bank account with NIBSS');
-      // For test mode, offer fallback confirmation
-      setVerifiedName('ORGANIZER OFFICIAL ACCOUNT');
-    }
-  };
-
-  const handleInitiatePayout = async () => {
-    if (!user?.emailVerified) {
+  const handleResolveAndSaveBank = async () => {
+    if (!user.emailVerified) {
       setVerifyModalOpen(true);
-      toast('Email verification required to process payouts.');
       return;
     }
-    const amt = parseFloat(payoutAmount);
-    if (!amt || amt <= 0) {
-      toast('Please enter a valid payout amount');
+    if (accountNumber.trim().length !== 10) {
+      toast('Enter a valid 10-digit Nigerian NUBAN account number.');
       return;
     }
-    if (amt > liveBalance) {
-      toast('Requested amount exceeds available balance');
-      return;
-    }
+    setResolving(true);
+    try {
+      const resolved = await resolveAccount(accountNumber.trim(), bankCode);
+      if (!resolved.success || !resolved.accountName) {
+        toast(resolved.error || 'Could not resolve account name via Paystack NIBSS.');
+        return;
+      }
 
-    setTransferring(true);
-    setTransferResult(null);
+      setAccountName(resolved.accountName);
+      setSavingBank(true);
 
-    const bank = COMMON_NIGERIAN_BANKS.find((b) => b.code === bankCode);
-    const recipient = await createTransferRecipient({
-      name: verifiedName || 'Event Organiser',
-      accountNumber,
-      bankCode,
-    });
-
-    const recipientCode = recipient.recipientCode || 'RCP_pstk_transfer';
-    const trfRes = await initiateTransfer({
-      amountNaira: amt,
-      recipientCode,
-      reason: `COORDINA Ticket Sales Settlement - ${bank?.name || 'Bank'}`,
-    });
-
-    setTransferring(false);
-
-    if (trfRes.success) {
-      const newRef = trfRes.transferCode || `TRF_${Date.now().toString().slice(-6)}`;
-      setLiveBalance((prev) => Math.max(0, prev - amt));
-      setHistory((prev) => [
-        {
-          d: 'Just now (Instant Paystack)',
-          ref: newRef,
-          a: amt,
-          s: 'Success',
-        },
-        ...prev,
-      ]);
-      setTransferResult({
-        ok: true,
-        msg: `Disbursed ${naira(amt)} to ${verifiedName || 'Account'} (${bank?.name || 'Bank'}). Ref: ${newRef}`,
+      const rec = await createTransferRecipient({
+        name: resolved.accountName,
+        accountNumber: accountNumber.trim(),
+        bankCode,
       });
-      toast(`Disbursement sent! Ref: ${newRef}`);
-    } else {
-      setTransferResult({
-        ok: false,
-        msg: trfRes.error || 'Paystack transfer request failed to dispatch.',
+
+      const finalRecipientCode = rec.recipientCode || recipientCode || undefined;
+      if (finalRecipientCode) setRecipientCode(finalRecipientCode);
+
+      await convex.mutation(api.payouts.saveBankAccount, {
+        userId: user._id as any,
+        bankName: selectedBank.name,
+        bankCode,
+        accountNumber: accountNumber.trim(),
+        accountName: resolved.accountName,
+        recipientCode: finalRecipientCode,
       });
+
+      toast(`Verified & saved: ${resolved.accountName} (${selectedBank.name})`);
+    } catch (err: any) {
+      toast(err?.message || 'Unable to verify settlement bank account.');
+    } finally {
+      setResolving(false);
+      setSavingBank(false);
+    }
+  };
+
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user.emailVerified) {
+      setVerifyModalOpen(true);
+      return;
+    }
+    if (summary?.organizerStatus !== 'verified') {
+      toast('Your organizer KYC must be verified before withdrawing funds.');
+      onGoVerify();
+      return;
+    }
+    if (!accountName || accountNumber.length !== 10) {
+      toast('Verify and save your NUBAN settlement account first.');
+      return;
+    }
+    const amt = Math.round(Number(withdrawAmount) || 0);
+    if (amt <= 0 || amt > available) {
+      toast(`Enter a valid amount up to ${naira(available)}.`);
+      return;
+    }
+
+    setDisbursing(true);
+    try {
+      let activeRecipient = recipientCode;
+      if (!activeRecipient) {
+        const rec = await createTransferRecipient({
+          name: accountName,
+          accountNumber,
+          bankCode,
+        });
+        if (!rec.success || !rec.recipientCode) {
+          toast(rec.error || 'Paystack transfer recipient setup failed.');
+          setDisbursing(false);
+          return;
+        }
+        activeRecipient = rec.recipientCode;
+        setRecipientCode(activeRecipient);
+      }
+
+      const ref = `PAYOUT-${Date.now()}`;
+      const trf = await initiateTransfer({
+        amountNaira: amt,
+        recipientCode: activeRecipient,
+        reason: `COORDINA Organizer Settlement (${user.organizer?.businessName || user.name})`,
+        reference: ref,
+      });
+
+      if (!trf.success) {
+        toast(trf.error || 'Paystack transfer could not be initiated.');
+        setDisbursing(false);
+        return;
+      }
+
+      await convex.mutation(api.payouts.recordPayout, {
+        userId: user._id as any,
+        amount: amt,
+        bankName: selectedBank.name,
+        bankCode,
+        accountNumber,
+        accountName,
+        reference: trf.transferCode || ref,
+        status: trf.status === 'success' ? 'paid' : 'pending',
+      });
+
+      setWithdrawAmount('');
+      toast(`Settlement of ${naira(amt)} initiated to ${accountName}!`);
+    } catch (err: any) {
+      toast(err?.message || 'Failed to record payout.');
+    } finally {
+      setDisbursing(false);
     }
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      {/* Balance Summary Card */}
-      <Card className="border-l-4 border-l-brand-500 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="muted text-xs">Available Settlement Balance</p>
-              <Badge tone="brand">Paystack Live Rails</Badge>
-            </div>
-            <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">{naira(liveBalance)}</p>
-            <p className="muted mt-1 text-xs">
-              Direct settlement to verified Nigerian bank accounts via Paystack Transfer API.
-            </p>
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="border-l-4 border-l-emerald-500 p-4">
+          <p className="muted text-xs">Available Balance</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
+            {available === 0 ? '₦0' : naira(available)}
+          </p>
+          <span className="text-[11px] text-emerald-600 dark:text-emerald-400">
+            {summary?.paidOrderCount ?? 0} settled ticket order(s)
+          </span>
+        </Card>
+        <Card className="border-l-4 border-l-brand-500 p-4">
+          <p className="muted text-xs">Gross Ticket Earnings</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
+            {grossEarned === 0 ? '₦0' : naira(grossEarned)}
+          </p>
+          <span className="muted text-[11px]">100% of your ticket face value</span>
+        </Card>
+        <Card className="border-l-4 border-l-slate-400 p-4">
+          <p className="muted text-xs">Total Disbursed</p>
+          <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
+            {totalDisbursed === 0 ? '₦0' : naira(totalDisbursed)}
+          </p>
+          <span className="muted text-[11px]">Settled to your bank</span>
+        </Card>
+      </div>
+
+      {summary?.organizerStatus !== 'verified' && (
+        <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-amber-900 dark:text-amber-200">
+            <strong>KYC Verification Required for Withdrawals:</strong> Complete your Organizer KYC &amp; live facial liveness check to unlock Paystack NUBAN settlements.
           </div>
-          <Button size="sm" variant="outline" onClick={refreshBalance} disabled={balanceLoading}>
-            <Icon name="refresh" className={`text-sm ${balanceLoading ? 'animate-spin' : ''}`} /> Sync Balance
+          <Button size="sm" onClick={onGoVerify}>
+            Complete KYC
           </Button>
         </div>
-      </Card>
+      )}
 
-      {/* Settlement Account Setup & Verification */}
-      <Card className="p-6">
-        <div className="flex items-center justify-between">
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* Bank Account Configuration */}
+        <Card className="space-y-4 p-5">
           <div>
-            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Settlement Bank Account</h3>
-            <p className="muted mt-0.5 text-xs">Real-time NIBSS account lookup &amp; instant verification.</p>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Nigerian Settlement Bank (Paystack NIBSS)
+            </h3>
+            <p className="muted text-xs">
+              Verify your 10-digit NUBAN account number against live NIBSS records.
+            </p>
           </div>
-          <Icon name="account_balance" className="text-2xl text-brand-500" />
-        </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Bank Name</label>
+            <label className="mb-1 block text-xs font-medium">Select Bank</label>
             <select
-              aria-label="Select Bank"
               value={bankCode}
               onChange={(e) => {
                 setBankCode(e.target.value);
-                setVerifiedName(null);
+                setAccountName('');
               }}
               className={inputCls}
             >
@@ -822,617 +1856,112 @@ function Payouts() {
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-              10-Digit NUBAN Account Number
-            </label>
-            <div className="flex gap-2">
-              <input
-                aria-label="Account Number"
-                type="text"
-                maxLength={10}
-                value={accountNumber}
-                onChange={(e) => {
-                  setAccountNumber(e.target.value.replace(/\D/g, ''));
-                  setVerifiedName(null);
-                }}
-                placeholder="0123456789"
-                className={`${inputCls} font-mono`}
-              />
-              <Button size="sm" onClick={handleVerifyAccount} disabled={verifying || accountNumber.length !== 10}>
-                {verifying ? 'Checking...' : 'Verify'}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {verifiedName && (
-          <div className="mt-3 flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-800 dark:text-emerald-200">
-            <div className="flex items-center gap-2">
-              <Icon name="verified" className="text-emerald-600 dark:text-emerald-400" />
-              <span>
-                Registered Account Name: <strong>{verifiedName}</strong>
-              </span>
-            </div>
-            <Badge tone="neon">NIBSS Verified</Badge>
-          </div>
-        )}
-
-        {verifyErr && (
-          <div className="mt-3 flex items-center gap-2 rounded-xl border border-coral-500/30 bg-coral-500/10 p-3 text-xs text-coral-700 dark:text-coral-300">
-            <Icon name="warning" />
-            <span>{verifyErr}</span>
-          </div>
-        )}
-      </Card>
-
-      {/* Instant Payout Transfer Request */}
-      <Card className="p-6">
-        <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Request Instant Payout</h3>
-        <p className="muted mt-0.5 text-xs">
-          Withdraw ticket revenue directly to your verified bank account in seconds.
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[200px] flex-1">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500">₦</span>
+            <label className="mb-1 block text-xs font-medium">10-Digit NUBAN Account Number</label>
             <input
-              aria-label="Payout Amount"
-              type="number"
-              value={payoutAmount}
-              onChange={(e) => setPayoutAmount(e.target.value)}
-              placeholder="Amount to withdraw"
-              className={`${inputCls} pl-8`}
+              maxLength={10}
+              value={accountNumber}
+              onChange={(e) => {
+                setAccountNumber(e.target.value.replace(/\D/g, ''));
+                setAccountName('');
+              }}
+              placeholder="Enter 10-digit account number"
+              className={`${inputCls} font-mono`}
             />
           </div>
-          {!user?.emailVerified ? (
-            <Button
-              size="md"
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-sm"
-              onClick={() => setVerifyModalOpen(true)}
-            >
-              <Icon name="lock" /> Verify Email to Withdraw
-            </Button>
-          ) : (
-            <Button
-              size="md"
-              disabled={transferring || !verifiedName || !payoutAmount || Number(payoutAmount) <= 0}
-              onClick={handleInitiatePayout}
-            >
-              {transferring ? (
-                <>
-                  <Icon name="sync" className="animate-spin text-sm" /> Processing Transfer...
-                </>
-              ) : (
-                <>
-                  <Icon name="send" className="text-sm" /> Disburse Funds via Paystack
-                </>
-              )}
-            </Button>
-          )}
-        </div>
 
-        {transferResult && (
-          <div
-            className={`mt-4 flex items-center gap-2 rounded-xl border p-3.5 text-xs font-medium ${transferResult.ok
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
-                : 'border-coral-500/40 bg-coral-500/10 text-coral-800 dark:text-coral-200'
-              }`}
-          >
-            <Icon name={transferResult.ok ? 'check_circle' : 'error'} filled />
-            <span>{transferResult.msg}</span>
-          </div>
-        )}
-      </Card>
-
-      {/* Payout Settlement History */}
-      <Card className="divide-y divide-slate-100 dark:divide-slate-800">
-        <div className="px-5 py-4">
-          <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300">Recent Disbursements</h4>
-        </div>
-        {history.map((r) => (
-          <div key={r.ref} className="flex items-center justify-between px-5 py-3.5 text-sm">
-            <div>
-              <p className="font-medium text-slate-900 dark:text-slate-100">{r.d}</p>
-              <p className="muted font-mono text-xs">{r.ref}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-slate-900 dark:text-slate-100">{naira(r.a)}</span>
-              <Badge tone={r.s === 'Paid' || r.s === 'Success' ? 'neon' : 'brand'}>{r.s}</Badge>
-            </div>
-          </div>
-        ))}
-      </Card>
-
-      {/* Platform Fee Schedule Information */}
-      <Card className="p-5">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">COORDINA Fee Schedule</h3>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs">
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-midnight-900">
-            <div className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
-              <Icon name="confirmation_number" className="text-brand-500" />
-              <span>Paid Ticket Events</span>
-            </div>
-            <p className="mt-1 leading-relaxed text-slate-600 dark:text-slate-300">
-              Organisers pay <strong>₦0 to post</strong>. Ticket buyers pay 5% platform service fee (capped at ₦2,000) + ₦100 payment processing fee at checkout.
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-midnight-900">
-            <div className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
-              <Icon name="loyalty" className="text-neon-500" />
-              <span>Free Admission Events</span>
-            </div>
-            <p className="mt-1 leading-relaxed text-slate-600 dark:text-slate-300">
-              Attendees RSVP <strong>100% free with ₦0 fee</strong>. Organiser pays <strong>₦2,500 per 100 persons capacity</strong> to cover hosting, verification, and gate scanning.
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      <EmptyState icon="account_balance" title="Need to update your settlement bank?" text="Manage verified Nigerian corporate or personal payout accounts in account settings." />
-    </div>
-  );
-}
-
-function OrganizerVerificationPortal() {
-  const verifications = useStore((s) => s.verifications);
-  const submitForVerification = useStore((s) => s.submitForVerification);
-  const checkIdentityIsBlacklisted = useStore((s) => s.checkIdentityIsBlacklisted);
-  const allEvents = useAllEvents();
-  const allSpaces = useAllSpaces();
-  const mine = allEvents.filter((e) => e.organiserId === 'org1' || e.organiserId === 'org2' || e.organiserId === 'o1');
-  const [selectedEventId, setSelectedEventId] = useState(mine[0]?.id ?? '');
-  const [cac, setCac] = useState('RC-1849204');
-  const [director, setDirector] = useState('Samuel Onuegbu');
-  const [nin, setNin] = useState('NIN-8910248192');
-  const [phone, setPhone] = useState('+234 803 555 1234');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(true);
-  const [venueEmail, setVenueEmail] = useState('contact@wuseartsgallery.ng');
-  const [venuePhone, setVenuePhone] = useState('+234 809 111 2233');
-  const [biometricScan, setBiometricScan] = useState<BiometricScanResult | null>(null);
-
-  const selectedEvent = mine.find((e) => e.id === selectedEventId) ?? mine[0];
-  const activeVerifications = verifications.filter((v) => v.organizerId === 'org1' || v.organizerId === 'org2');
-
-  const blacklistStatus = checkIdentityIsBlacklisted({
-    nin,
-    phone,
-    email: venueEmail,
-  });
-
-  const isKycComplete = Boolean(
-    cac.trim().length > 3 &&
-    director.trim().length > 2 &&
-    nin.trim().length > 5 &&
-    otpVerified &&
-    biometricScan?.verified &&
-    venueEmail.trim().length > 5
-  );
-
-  // Compute live risk assessment preview
-  const liveRisk = calculateRiskAssessment({
-    isNewOrganizer: false,
-    hasCacNumber: cac.trim().length > 3,
-    isBvnNinVerified: nin.trim().length > 5,
-    isVenueConfirmed: false,
-    maxTicketPrice: selectedEvent ? Math.max(...selectedEvent.tiers.map((t) => t.price)) : 10000,
-    startDate: selectedEvent ? selectedEvent.start : new Date().toISOString(),
-    hasFlyer: true,
-    hasVenueAgreement: true,
-    organizerTrustScore: 4.9,
-  });
-
-  const handleSubmitVerification = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEvent) return;
-
-    if (blacklistStatus.blacklisted) {
-      toast(`KYC Verification Blocked: ${blacklistStatus.matchedField} is on the compliance blacklist.`);
-      return;
-    }
-
-    if (!biometricScan?.verified) {
-      toast('Face Scan Required: You must pass the Live Facial Biometric Scan before submitting.');
-      return;
-    }
-
-    const token = 'tok_' + Math.random().toString(36).slice(2, 10);
-    const id = 'vr-' + Date.now();
-
-    const record: EventVerificationRecord = {
-      id,
-      eventId: selectedEvent.id,
-      eventTitle: selectedEvent.title,
-      category: selectedEvent.category,
-      city: selectedEvent.city,
-      area: selectedEvent.area,
-      venueId: selectedEvent.spaceId,
-      venueName: allSpaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
-      organizerId: 'org1',
-      organizerName: 'Eclipse Live Africa',
-      organizerIdentity: {
-        cacNumber: cac.trim(),
-        bvnNinVerified: true,
-        phoneOtpVerified: true,
-        directorName: director.trim(),
-        faceBiometricVerified: biometricScan?.verified ?? false,
-        faceSnapshotUrl: biometricScan?.faceSnapshotUrl,
-        biometricToken: biometricScan?.biometricToken,
-        biometricConfidence: biometricScan?.confidence,
-        biometricScannedAt: biometricScan?.scannedAt,
-      },
-      documents: [
-        {
-          id: 'doc-' + Date.now(),
-          name: `${selectedEvent.title} Official Flyer & Lineup.pdf`,
-          type: 'Event Flyer & Lineup',
-          url: selectedEvent.image,
-          uploadedAt: new Date().toISOString(),
-          verified: true,
-        },
-        {
-          id: 'doc-cac-' + Date.now(),
-          name: 'CAC Corporate Certificate.pdf',
-          type: 'CAC Certificate',
-          url: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=800&q=80',
-          uploadedAt: new Date().toISOString(),
-          verified: true,
-        },
-      ],
-      venueConfirmation: {
-        id: 'vc-' + Date.now(),
-        venueId: selectedEvent.spaceId,
-        venueName: allSpaces.find((s) => s.id === selectedEvent.spaceId)?.name ?? selectedEvent.area,
-        contactEmail: venueEmail.trim(),
-        contactPhone: venuePhone.trim(),
-        token,
-        status: 'Pending',
-        requestedAt: new Date().toISOString(),
-        notes: 'Awaiting venue manager confirmation response via Termii / Email token link.',
-      },
-      riskAssessment: liveRisk,
-      status: 'Verification Pending',
-      submittedAt: new Date().toISOString(),
-    };
-
-    submitForVerification(record);
-    sendVenueConfirmationRequestEmail({
-      venueEmail: venueEmail.trim(),
-      venueName: record.venueName,
-      eventTitle: selectedEvent.title,
-      organizerName: record.organizerName,
-      date: fmtDate(selectedEvent.start),
-      token,
-    });
-    toast('Event submitted for remote verification! Venue confirmation email sent.');
-  };
-
-  return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      {/* Active Verification Status Header */}
-      <Card className="border-l-4 border-l-brand-500 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-500">
-              Organizer Verification Status
-            </span>
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Afro Nation Collective</h2>
-            <p className="muted mt-0.5 text-xs">
-              CAC: <strong className="text-slate-800 dark:text-slate-200">RC-1849204</strong> · Director:{' '}
-              <strong className="text-slate-800 dark:text-slate-200">Babatunde Adeyemi</strong> · Level 3 KYC
-            </p>
-          </div>
-          <VerificationBadge status="Organizer Verified" size="md" />
-        </div>
-      </Card>
-
-      {/* Your Submitted Events Verification Queue */}
-      <div>
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Submitted Event Verifications</h3>
-        <p className="muted text-xs">Events with verified badges receive 4.2x higher ticket sales and lower chargebacks.</p>
-
-        <div className="mt-3 space-y-3">
-          {activeVerifications.map((v) => (
-            <Card key={v.id} className="p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-semibold text-slate-900 dark:text-white">{v.eventTitle}</h4>
-                    <VerificationBadge status={v.status} size="sm" />
-                  </div>
-                  <p className="muted mt-0.5 text-xs">
-                    Venue: {v.venueName} · Risk Score: <strong>{v.riskAssessment.score}/100 ({v.riskAssessment.level})</strong>
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-600 dark:text-slate-400">
-                    Venue Confirmation:{' '}
-                    <strong className={v.venueConfirmation.status === 'Confirmed' ? 'text-emerald-600' : 'text-amber-600'}>
-                      {v.venueConfirmation.status}
-                    </strong>
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    to={`/venue-portal/${v.venueConfirmation.token}`}
-                    target="_blank"
-                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
-                  >
-                    <Icon name="link" className="text-xs" />
-                    Open Portal
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const portalUrl = `https://coordina-beta.vercel.app/venue-portal/${v.venueConfirmation.token}`;
-                      navigator.clipboard?.writeText(portalUrl);
-                      toast('Venue confirmation link copied!');
-                    }}
-                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-200"
-                  >
-                    <Icon name="content_copy" className="text-xs" />
-                    Copy Token Link
-                  </button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      {/* Submit New Event for Verification */}
-      <Card className="space-y-4 p-6">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">Apply for Remote Event Verification</h3>
-          <p className="muted mt-0.5 text-xs">
-            Verify your event without physical attendance using automated CAC cross-checks, Termii OTP, and venue confirmation tokens.
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmitVerification} className="space-y-4">
-          {blacklistStatus.blacklisted && (
-            <div className="rounded-2xl border-2 border-rose-500/50 bg-rose-500/10 p-5 text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-200">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-md">
-                  <Icon name="gavel" className="text-xl" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                      KYC Restricted &amp; Blacklisted
-                    </span>
-                    <span className="text-xs font-semibold">Matched Vector: {blacklistStatus.matchedField}</span>
-                  </div>
-                  <h4 className="mt-1 text-base font-bold text-rose-950 dark:text-rose-100">
-                    Organizer Verification Blocked
-                  </h4>
-                  <p className="mt-1 text-xs leading-relaxed opacity-90">
-                    This <strong>{blacklistStatus.matchedField}</strong> is listed on the COORDINA National Fraud &amp; Identity Blacklist:
-                  </p>
-                  <blockquote className="mt-2 rounded-lg border-l-4 border-rose-500 bg-rose-500/10 px-3 py-1.5 text-xs font-medium italic">
-                    "{blacklistStatus.reason}"
-                  </blockquote>
-                  <p className="mt-2.5 text-[11px] opacity-80">
-                    Remote verification applications, escrow payouts, and new ticket creations are permanently frozen under Nigerian Anti-Fraud Compliance Directives. For dispute resolutions or identity pardon, contact compliance@coordina.ng.
-                  </p>
-                </div>
-              </div>
+          {accountName && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
+              <span className="muted block text-[10px] uppercase">Resolved Account Name</span>
+              <strong className="font-mono text-sm text-emerald-700 dark:text-emerald-300">
+                {accountName}
+              </strong>
             </div>
           )}
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Select Event to Verify</label>
-            <select
-              value={selectedEventId}
-              onChange={(e) => setSelectedEventId(e.target.value)}
-              className={inputCls}
-            >
-              {mine.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.title} ({e.area}, {e.city})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">CAC Registration (RC)</label>
-              <input
-                type="text"
-                value={cac}
-                onChange={(e) => setCac(e.target.value)}
-                placeholder="e.g. RC-1849204"
-                className={inputCls}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Director Name</label>
-              <input
-                type="text"
-                value={director}
-                onChange={(e) => setDirector(e.target.value)}
-                placeholder="Director Full Name"
-                className={inputCls}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Director NIN / BVN</label>
-              <input
-                type="text"
-                value={nin}
-                onChange={(e) => setNin(e.target.value)}
-                placeholder="NIN or BVN"
-                className={inputCls}
-                required
-              />
-            </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">Phone &amp; Termii OTP</label>
-                {otpVerified ? (
-                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">✓ Verified</span>
-                ) : otpSent ? (
-                  <button
-                    type="button"
-                    onClick={() => setOtpVerified(true)}
-                    className="text-[10px] font-semibold text-brand-500 hover:underline"
-                  >
-                    Enter 1234
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setOtpSent(true)}
-                    className="text-[10px] font-semibold text-brand-500 hover:underline"
-                  >
-                    Send OTP
-                  </button>
-                )}
-              </div>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => {
-                  setPhone(e.target.value);
-                  setOtpVerified(false);
-                }}
-                placeholder="+234 803 555 1234"
-                className={inputCls}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-                Venue Manager Email (for Confirmation Token)
-              </label>
-              <input
-                type="email"
-                value={venueEmail}
-                onChange={(e) => setVenueEmail(e.target.value)}
-                placeholder="manager@venue.ng"
-                className={inputCls}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-                Venue Manager Phone
-              </label>
-              <input
-                type="tel"
-                value={venuePhone}
-                onChange={(e) => setVenuePhone(e.target.value)}
-                placeholder="+234 812 345 6789"
-                className={inputCls}
-                required
-              />
-            </div>
-          </div>
-
-          {/* MANDATORY LIVE FACIAL BIOMETRIC SCANNER */}
-          <FaceLivenessScanner
-            directorName={director}
-            nin={nin}
-            onComplete={(res) => {
-              setBiometricScan(res);
-              toast('Biometric liveness verified! Director face authenticated.');
-            }}
-            initialSnapshot={biometricScan?.faceSnapshotUrl}
-          />
-
-          {/* BASIC PLANNER VERIFICATION CHECKLIST */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-midnight-950/40">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-              Basic Planner Verification Requirements (All Mandatory)
-            </h4>
-            <div className="mt-2.5 grid gap-2 sm:grid-cols-2 text-xs">
-              <div className="flex items-center gap-2">
-                <Icon
-                  name={cac.trim().length > 3 ? 'check_circle' : 'radio_button_unchecked'}
-                  className={cac.trim().length > 3 ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
-                />
-                <span>CAC Corporate Registration ({cac || 'Required'})</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Icon
-                  name={nin.trim().length > 5 ? 'check_circle' : 'radio_button_unchecked'}
-                  className={nin.trim().length > 5 ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
-                />
-                <span>Director NIN/BVN Validated</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Icon
-                  name={otpVerified ? 'check_circle' : 'radio_button_unchecked'}
-                  className={otpVerified ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
-                />
-                <span>Termii SMS OTP Phone Verified</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Icon
-                  name={biometricScan?.verified ? 'check_circle' : 'warning'}
-                  className={biometricScan?.verified ? 'text-emerald-500 text-sm' : 'text-rose-500 text-sm'}
-                />
-                <span className={biometricScan?.verified ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-rose-600 dark:text-rose-400 font-semibold'}>
-                  Facial Biometric Scan {biometricScan?.verified ? '(Passed)' : '(Action Required)'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 sm:col-span-2">
-                <Icon
-                  name={venueEmail.trim().length > 5 ? 'check_circle' : 'radio_button_unchecked'}
-                  className={venueEmail.trim().length > 5 ? 'text-emerald-500 text-sm' : 'text-slate-400 text-sm'}
-                />
-                <span>Venue Manager Agreement Token ({venueEmail})</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Live Risk Engine Assessment Score Preview */}
-          <div className="rounded-2xl border border-brand-500/30 bg-brand-500/5 p-4 dark:bg-brand-500/10">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                  Automated Risk Engine Score: {liveRisk.score}/100 ({liveRisk.level} Risk)
-                </p>
-                <p className="muted text-[11px] mt-0.5">
-                  Submissions with Low Risk (&le; 30) are eligible for fast-track verification once the venue confirms.
-                </p>
-              </div>
-              <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                Fast-Track Eligible
-              </span>
-            </div>
-
-            <ul className="mt-2.5 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
-              {liveRisk.reasons.map((r, i) => (
-                <li key={i} className="flex items-center gap-1.5">
-                  <Icon name="check_circle" className="text-xs text-brand-500" />
-                  <span>{r}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
 
           <Button
+            type="button"
+            variant="outline"
             full
-            size="lg"
-            type="submit"
-            disabled={!isKycComplete || blacklistStatus.blacklisted}
-            variant={!isKycComplete || blacklistStatus.blacklisted ? 'ghost' : 'primary'}
+            disabled={resolving || savingBank || accountNumber.length !== 10}
+            onClick={handleResolveAndSaveBank}
           >
-            {blacklistStatus.blacklisted
-              ? `Verification Blocked (${blacklistStatus.matchedField} Blacklisted)`
-              : !biometricScan?.verified
-                ? 'Facial Biometric Liveness Scan Required'
-                : !isKycComplete
-                  ? 'Complete All Mandatory Verification Requirements'
-                  : 'Submit for Remote Verification'}
+            {resolving || savingBank
+              ? 'Verifying with NIBSS…'
+              : 'Verify & Save Settlement Account'}
           </Button>
-        </form>
+        </Card>
+
+        {/* Withdraw Funds */}
+        <Card className="space-y-4 p-5">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Request Payout Settlement
+            </h3>
+            <p className="muted text-xs">
+              Disburse cleared ticket revenue directly to your verified bank account.
+            </p>
+          </div>
+
+          <form onSubmit={handleWithdraw} className="space-y-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium">Withdrawal Amount (₦)</label>
+              <input
+                type="number"
+                min={100}
+                max={Math.max(100, available)}
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                placeholder={available > 0 ? `Up to ${available}` : '0'}
+                className={inputCls}
+              />
+            </div>
+
+            <Button
+              type="submit"
+              full
+              disabled={
+                disbursing ||
+                available <= 0 ||
+                !accountName ||
+                summary?.organizerStatus !== 'verified'
+              }
+            >
+              {disbursing ? 'Initiating Transfer…' : 'Disburse via Paystack'}
+            </Button>
+          </form>
+        </Card>
+      </div>
+
+      {/* Real Payout Ledger */}
+      <Card className="p-5">
+        <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-white">
+          Settlement History
+        </h3>
+        {!summary?.payouts.length ? (
+          <p className="muted text-xs">No payouts have been disbursed on your account yet.</p>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {summary.payouts.map((p: any) => (
+              <div key={p._id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-xs">
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-white">
+                    {naira(p.amount)} → {p.bankName} ({p.accountName})
+                  </p>
+                  <p className="muted font-mono text-[11px]">
+                    Ref: {p.reference} · {new Date(p.createdAt).toLocaleString('en-NG')}
+                  </p>
+                </div>
+                <Badge
+                  tone={
+                    p.status === 'paid' ? 'neon' : p.status === 'failed' ? 'coral' : 'amber'
+                  }
+                >
+                  {p.status}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );

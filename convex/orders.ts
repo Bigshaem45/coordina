@@ -99,9 +99,14 @@ export const createOrder = mutation({
     const isFreeOrder = subtotal === 0;
 
     // Consistent with computeFees in src/lib/format.ts:
-    // Service fee: 3.5% + ₦100 capped at ₦2,500; Gateway fee: 1.5%
-    const platformFee = isFreeOrder ? 0 : Math.min(2500, Math.round(subtotal * 0.035) + 100);
-    const gatewayFee = isFreeOrder ? 0 : Math.round(subtotal * 0.015);
+    // 5% service fee (capped ₦2,000 per line) + flat ₦100 processing + 7.5% VAT on fees
+    const serviceFee = isFreeOrder
+      ? 0
+      : Math.min(Math.round(subtotal * 0.05), 2000 * Math.max(verifiedItems.length, 1));
+    const processingFee = isFreeOrder ? 0 : 100;
+    const vatFee = isFreeOrder ? 0 : Math.round((serviceFee + processingFee) * 0.075);
+    const platformFee = serviceFee + vatFee;
+    const gatewayFee = processingFee;
     const freeEventOrgFee = isFreeOrder ? 2500 : 0;
     const totalFees = platformFee + gatewayFee;
     const grandTotal = subtotal + totalFees;

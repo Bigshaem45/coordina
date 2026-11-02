@@ -17,33 +17,25 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Missing required email fields (to, subject, html)' });
   }
 
-  // 1. SendGrid Configuration (Primary)
-  const sendgridKey = (
-    process.env.SENDGRID_API_KEY ||
-    process.env.VITE_SENDGRID_API_KEY ||
-    ''
-  ).trim().replace(/^["']|["']$/g, '');
+  // 1. SendGrid Configuration (Server-only Vercel Environment Variables)
+  const sendgridKey = (process.env.SENDGRID_API_KEY || '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
 
-  const sendgridFrom = (
-    process.env.SENDGRID_FROM_EMAIL ||
-    process.env.VITE_SENDGRID_FROM_EMAIL ||
-    'apvdirect1@gmail.com'
-  ).trim().replace(/^["']|["']$/g, '');
+  const sendgridFrom = (process.env.SENDGRID_FROM_EMAIL || 'apvdirect1@gmail.com')
+    .trim()
+    .replace(/^["']|["']$/g, '');
 
-  // 2. Resend Configuration (Secondary Fallback)
-  const resendKey = (
-    process.env.RESEND_API_KEY ||
-    process.env.VITE_RESEND_API_KEY ||
-    ''
-  ).trim().replace(/^["']|["']$/g, '');
+  // 2. Resend Configuration (Secondary Server-only Fallback)
+  const resendKey = (process.env.RESEND_API_KEY || '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
 
-  const resendFrom = (
-    process.env.RESEND_FROM_EMAIL ||
-    process.env.VITE_RESEND_FROM_EMAIL ||
-    'COORDINA <onboarding@resend.dev>'
-  ).trim().replace(/^["']|["']$/g, '');
+  const resendFrom = (process.env.RESEND_FROM_EMAIL || 'COORDINA <onboarding@resend.dev>')
+    .trim()
+    .replace(/^["']|["']$/g, '');
 
-  // If SendGrid key is provided, dispatch via SendGrid v3 Mail Send API
+  // Dispatch via SendGrid v3 Mail Send API
   if (sendgridKey) {
     try {
       const fromEmail = sendgridFrom.includes('<')
@@ -139,10 +131,13 @@ export default async function handler(req: any, res: any) {
   }
 
   // Guard against missing API keys
-  console.warn('[Vercel send-email] Neither SENDGRID_API_KEY nor RESEND_API_KEY is configured in Vercel environment variables.');
+  console.warn(
+    '[Vercel send-email] SENDGRID_API_KEY is not configured in Vercel environment variables.'
+  );
   return res.status(200).json({
     success: false,
     deferred: true,
-    message: 'SENDGRID_API_KEY is not configured in Vercel Environment Variables. Please add SENDGRID_API_KEY to your Vercel Project Settings.',
+    message:
+      'SENDGRID_API_KEY is not configured in Vercel Environment Variables. Please add SENDGRID_API_KEY and SENDGRID_FROM_EMAIL to your Vercel Project Settings.',
   });
 }

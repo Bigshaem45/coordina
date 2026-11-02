@@ -1,13 +1,14 @@
-import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useQuery } from 'convex/react';
 import { Icon } from '../../design-system/Icon';
 import { Button, Card, Cover, EmptyState } from '../../design-system/ui';
-import { useAllEvents, useStore } from '../../store';
+import { useAllEvents, useAuth, usePlanItems, useStore } from '../../store';
 import { computeFees, fmtDate, naira } from '../../lib/format';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 import { sendBookingConfirmationEmail } from '../../lib/email';
-import { payWithPaystack } from '../../lib/paystack';
+import { payWithPaystack, isPaystackConfigured } from '../../lib/paystack';
 import { toast } from '../../lib/fx';
 
 type Method = 'Card' | 'Bank transfer' | 'USSD';
@@ -15,25 +16,64 @@ type Method = 'Card' | 'Bank transfer' | 'USSD';
 export default function Checkout() {
   const [sp] = useSearchParams();
   const nav = useNavigate();
+  const loc = useLocation();
   const all = useAllEvents();
-  const cart = useStore((s) => s.cart);
-  const user = useStore((s) => s.user);
-  const saved = useStore((s) => s.savedCard);
-  const complete = useStore((s) => s.completeOrder);
+  const planItems = usePlanItems();
+  const { user, isLoading } = useAuth();
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
-  const isUnverified = !user || !user.emailVerified;
+
   const [method, setMethod] = useState<Method>('Card');
   const [paying, setPaying] = useState(false);
-  const [ussd, setUssd] = useState('GTBank');
-  const [card, setCard] = useState({ num: saved ? '4242 4242 4242 4242' : '', exp: '08/28', cvv: '242' });
+  const [promoInput, setPromoInput] = useState('');
+  const [appliedCode, setAppliedCode] = useState('');
+  const [gatewayError, setGatewayError] = useState<string | null>(null);
 
   const only = sp.get('only');
-  const lines = only ? [{ eventId: only, tierId: sp.get('tier')!, qty: Number(sp.get('qty') ?? 1) }] : cart;
-  const rows = lines.flatMap((l) => {
-    const event = all.find((e) => e.id === l.eventId);
-    const tier = event?.tiers.find((t) => t.id === l.tierId);
-    return event && tier ? [{ event, tier, qty: l.qty }] : [];
-  });
+  const onlyTier = sp.get('tier');
+  const onlyQty = Number(sp.get('qty') ?? 1);
+
+  const rows = useMemo(() => {
+    if (only) {
+      const event = all.find((e) => e.id === only);
+      const tier =
+        event?.tiers.find((t) => t.id === onlyTier) ?? event?.tiers[0];
+      return event && tier ? [{ event, tier, qty: Math.max(1, onlyQty) }] : [];
+    }
+    return planItems;
+  }, [only, onlyTier, onlyQty, all, planItems]);
+
+  const eventIds = useMemo(() => rows.map((r) => r.event.id as any), [rows]);
+  const promoCheck = useQuery(
+    api.events.validatePromoCode,
+    appliedCode && eventIds.length > 0
+      ? { code: appliedCode, eventIds }
+      : 'skip'
+  );
+
+  if (!isLoading && !user) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-10">
+        <EmptyState
+          icon="lock"
+          title="Sign in to complete checkout"
+          text="Tickets are cryptographically bound to your verified COORDINA account."
+          action={
+            <Button
+              onClick={() =>
+                nav(
+                  `/auth?mode=signin&redirect=${encodeURIComponent(
+                    loc.pathname + loc.search
+                  )}`
+                )
+              }
+            >
+              Log In to Checkout
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   if (rows.length === 0) {
     return (
@@ -45,26 +85,34 @@ export default function Checkout() {
     );
   }
 
-  const sub = rows.reduce((s, r) => s + r.tier.price * r.qty, 0);
+  const rawSub = rows.reduce((s, r) => s + r.tier.price * r.qty, 0);
+  const discountAmount =
+    promoCheck?.valid && promoCheck.discountPct
+      ? rows.reduce((sum, r) => {
+          if (promoCheck.applicableEventIds?.includes(r.event.id)) {
+            return sum + Math.round((r.tier.price * r.qty * promoCheck.discountPct!) / 100);
+          }
+          return sum;
+        }, 0)
+      : 0;
+
+  const sub = Math.max(0, rawSub - discountAmount);
   const f = computeFees(sub, rows.length);
   const orgs = new Set(rows.map((r) => r.event.organiserId)).size;
-  const cardOk =
-    method !== 'Card' ||
-    saved ||
-    (card.num.replace(/\s/g, '').length >= 12 && card.exp.length >= 4 && card.cvv.length >= 3);
+  const isUnverified = !user || !user.emailVerified;
 
-  const finalizeOrder = async (customRef?: string) => {
-    const o = complete(lines, f.total, f.fees, sub === 0 ? 'Free' : method);
-    const customerEmail = user?.email || 'attendee@coordina.app';
-    const customerName = user?.name || 'Guest Attendee';
-    const txRef = customRef || o.id;
-
+  const finalizeOrder = async (txRef: string) => {
+    if (!user) return;
     try {
-      await convex.mutation(api.orders.createOrder, {
-        customerName,
-        customerEmail,
+      const orderRes = await convex.mutation(api.orders.createOrder, {
+        userId: user._id as any,
+        customerName: user.name,
+        customerEmail: user.email,
+        customerPhone: user.phone,
+        promoCode: promoCheck?.valid ? promoCheck.code : undefined,
         transactionRef: txRef,
-        paymentMethod: method === 'Card' ? 'card' : method === 'USSD' ? 'ussd' : 'transfer',
+        paymentMethod:
+          method === 'Card' ? 'card' : method === 'USSD' ? 'ussd' : 'transfer',
         items: rows.map((r) => ({
           eventId: r.event.id as any,
           eventTitle: r.event.title,
@@ -75,73 +123,82 @@ export default function Checkout() {
         })),
       });
 
-      // Send booking confirmation email via Resend
       sendBookingConfirmationEmail({
-        to: customerEmail,
-        name: customerName,
-        orderId: o.id,
+        to: user.email,
+        name: user.name,
+        orderId: orderRes.orderId,
         eventTitle: rows[0]?.event.title || 'COORDINA Live Event',
-        venueName: rows[0]?.event.area || 'Venue',
+        venueName: rows[0]?.event.venueName || rows[0]?.event.area || 'Venue',
         date: fmtDate(rows[0]?.event.start || new Date().toISOString()),
         tierName: rows.map((r) => `${r.tier.name} (${r.qty})`).join(', '),
         qty: rows.reduce((s, r) => s + r.qty, 0),
-        total: f.total,
+        total: orderRes.total,
       });
-    } catch (e) {
-      console.warn('Convex order sync:', e);
+
+      setPaying(false);
+      nav(`/success/${orderRes.orderId}`, { replace: true });
+    } catch (err: any) {
+      setPaying(false);
+      setGatewayError(err?.message || 'Unable to issue tickets. Please contact support with your reference.');
+      toast(err?.message || 'Order creation failed.');
     }
-    setPaying(false);
-    nav(`/success/${o.id}`, { replace: true });
   };
 
   const pay = async () => {
-    if (isUnverified) {
-      if (user) {
-        setVerifyModalOpen(true);
-        toast('Please verify your email address to complete ticket purchases.');
-      } else {
-        nav('/auth?mode=signin');
-      }
+    setGatewayError(null);
+    if (!user) {
+      nav(`/auth?mode=signin&redirect=${encodeURIComponent(loc.pathname + loc.search)}`);
       return;
     }
-    setPaying(true);
-    const customerEmail = user?.email || 'attendee@coordina.app';
-
-    // If free event, complete directly
-    if (sub === 0) {
-      return finalizeOrder();
+    if (!user.emailVerified) {
+      setVerifyModalOpen(true);
+      toast('Please verify your email address before purchasing tickets.');
+      return;
     }
 
-    // Launch Paystack Inline Checkout
-    try {
-      const launched = await payWithPaystack({
-        email: customerEmail,
-        amountKobo: Math.round(f.total * 100),
-        reference: `CD-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        metadata: {
-          customerName: user?.name || 'Guest Attendee',
-          itemCount: rows.length,
-          events: rows.map((r) => r.event.title).join(', '),
-        },
-        onSuccess: (res) => {
-          finalizeOrder(res.reference);
-        },
-        onCancel: () => {
-          setPaying(false);
-        },
-      });
+    setPaying(true);
 
-      if (!launched) {
-        // Fallback if browser blocks popups or Paystack inline is unavailable
-        await finalizeOrder();
-      }
-    } catch {
-      await finalizeOrder();
+    // Free RSVP (₦0 total)
+    if (f.total === 0) {
+      await finalizeOrder(`FREE-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`);
+      return;
+    }
+
+    const channels =
+      method === 'Card'
+        ? ['card']
+        : method === 'Bank transfer'
+          ? ['bank_transfer', 'bank']
+          : ['ussd'];
+
+    const result = await payWithPaystack({
+      email: user.email,
+      amountKobo: Math.round(f.total * 100),
+      reference: `CD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      channels,
+      metadata: {
+        userId: user._id,
+        customerName: user.name,
+        itemCount: rows.length,
+        events: rows.map((r) => r.event.title).join(', '),
+      },
+      onSuccess: (res) => {
+        finalizeOrder(res.reference);
+      },
+      onCancel: () => {
+        setPaying(false);
+        toast('Payment window closed. Your plan items are still saved.');
+      },
+    });
+
+    if (!result.launched) {
+      setPaying(false);
+      setGatewayError(
+        result.error || 'Unable to launch Paystack checkout. Please retry.'
+      );
+      toast(result.error || 'Paystack gateway unavailable.');
     }
   };
-
-  const inputCls =
-    'h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100';
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-5 pb-28 md:py-8">
@@ -153,23 +210,38 @@ export default function Checkout() {
         <Icon name="arrow_back" className="text-base" /> Back
       </button>
 
-      <h1 className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">Detail Order &amp; Payment</h1>
+      <h1 className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
+        Order Review &amp; Payment
+      </h1>
       <p className="muted text-xs">
-        Single checkout for {rows.length} event{rows.length > 1 ? 's' : ''} across {orgs} organiser{orgs > 1 ? 's' : ''}.
+        Checkout as <strong className="text-slate-800 dark:text-slate-200">{user?.email}</strong> ·{' '}
+        {rows.length} event{rows.length > 1 ? 's' : ''} across {orgs} organiser
+        {orgs > 1 ? 's' : ''}.
       </p>
 
       {/* Itemized Ticket Preview */}
       <Card className="mt-5 divide-y divide-[var(--border)] p-4">
         {rows.map((r) => (
-          <div key={r.event.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-            <Cover gradient={r.event.image} category={r.event.category} className="h-14 w-14 shrink-0 rounded-xl" />
+          <div
+            key={r.event.id}
+            className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
+          >
+            <Cover
+              gradient={r.event.image}
+              category={r.event.category}
+              className="h-14 w-14 shrink-0 rounded-xl"
+            />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{r.event.title}</p>
+              <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+                {r.event.title}
+              </p>
               <p className="muted text-xs">
                 {fmtDate(r.event.start)} · {r.tier.name} × {r.qty}
               </p>
             </div>
-            <span className="text-sm font-semibold text-slate-900 dark:text-white">{naira(r.tier.price * r.qty)}</span>
+            <span className="text-sm font-semibold text-slate-900 dark:text-white">
+              {r.tier.price === 0 ? 'Free' : naira(r.tier.price * r.qty)}
+            </span>
           </div>
         ))}
       </Card>
@@ -179,44 +251,84 @@ export default function Checkout() {
         <Card className="mt-4 border-2 border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm font-bold">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 font-bold text-white shadow-sm">
                 <Icon name="lock" className="text-xl" />
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Email Verification Required</h4>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Email Verification Required
+                  </h4>
                   <span className="rounded-full bg-coral-500/20 px-2 py-0.5 text-[10px] font-bold text-coral-700 dark:text-coral-300">
                     Checkout Restricted
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                  {user ? (
-                    <>You must verify <strong>{user.email}</strong> before purchasing tickets to ensure offline cryptographic passes are tied to your identity.</>
-                  ) : (
-                    <>Sign in and verify your email before purchasing tickets.</>
-                  )}
+                  Verify <strong>{user?.email}</strong> before purchasing tickets so your QR passes are cryptographically bound to your wallet.
                 </p>
               </div>
             </div>
-            {user ? (
-              <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white shrink-0 shadow-sm" onClick={() => setVerifyModalOpen(true)}>
-                <Icon name="verified" /> Verify Email Now
-              </Button>
-            ) : (
-              <Button size="sm" className="bg-brand-600 hover:bg-brand-700 text-white shrink-0 shadow-sm" onClick={() => nav('/auth?mode=signin')}>
-                <Icon name="login" /> Sign In &amp; Verify
-              </Button>
-            )}
+            <Button
+              size="sm"
+              className="shrink-0 bg-amber-600 text-white shadow-sm hover:bg-amber-700"
+              onClick={() => setVerifyModalOpen(true)}
+            >
+              <Icon name="verified" /> Verify Email Now
+            </Button>
           </div>
         </Card>
       )}
 
-      {sub > 0 && (
+      {/* Promo Code Input */}
+      {rawSub > 0 && (
+        <Card className="mt-4 p-4">
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            Have an Organiser Promo Code?
+          </label>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={promoInput}
+              onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+              placeholder="Enter promo code"
+              className="h-10 flex-1 rounded-xl border border-slate-200 bg-white px-3.5 font-mono text-xs uppercase text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!promoInput.trim()}
+              onClick={() => setAppliedCode(promoInput.trim().toUpperCase())}
+            >
+              Apply
+            </Button>
+          </div>
+          {appliedCode && promoCheck && (
+            <p
+              className={`mt-2 text-xs font-medium ${
+                promoCheck.valid
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {promoCheck.valid
+                ? `Applied ${promoCheck.code} (${promoCheck.discountPct}% off eligible tickets — saved ${naira(discountAmount)})`
+                : promoCheck.message}
+            </p>
+          )}
+        </Card>
+      )}
+
+      {/* Payment Channel Selection */}
+      {f.total > 0 && (
         <Card className="mt-4 p-5">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Payment Gateway</h2>
-              <p className="muted text-xs">Direct API integration via Paystack</p>
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Payment Channel
+              </h2>
+              <p className="muted text-xs">
+                Processed securely inside Paystack&apos;s PCI-DSS checkout window
+              </p>
             </div>
             <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
               <Icon name="verified_user" className="text-sm" /> Secured by Paystack
@@ -229,10 +341,11 @@ export default function Checkout() {
               return (
                 <label
                   key={m}
-                  className={`flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-xs font-medium transition ${active
+                  className={`flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-xs font-medium transition ${
+                    active
                       ? 'border-brand-500 bg-brand-50/70 text-brand-700 dark:bg-brand-500/15 dark:text-white'
                       : 'border-[var(--border)] text-slate-700 hover:border-slate-300 dark:text-slate-200'
-                    }`}
+                  }`}
                 >
                   <input
                     type="radio"
@@ -241,7 +354,13 @@ export default function Checkout() {
                     onChange={() => setMethod(m)}
                   />
                   <Icon
-                    name={m === 'Card' ? 'credit_card' : m === 'Bank transfer' ? 'account_balance' : 'dialpad'}
+                    name={
+                      m === 'Card'
+                        ? 'credit_card'
+                        : m === 'Bank transfer'
+                          ? 'account_balance'
+                          : 'dialpad'
+                    }
                     className="text-base text-brand-500"
                   />
                   <span>{m}</span>
@@ -250,79 +369,36 @@ export default function Checkout() {
             })}
           </div>
 
-          {method === 'Card' && (
-            <div className="mt-4 space-y-2.5">
-              {saved ? (
-                <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-700 dark:bg-midnight-900 dark:text-slate-300">
-                  Paying with saved card <strong>{saved}</strong> via Paystack.
-                </p>
-              ) : (
-                <>
-                  <input
-                    aria-label="Card number"
-                    inputMode="numeric"
-                    placeholder="Card number (4242 •••• •••• 4242)"
-                    value={card.num}
-                    onChange={(e) => setCard({ ...card, num: e.target.value })}
-                    className={inputCls}
-                  />
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <input
-                      aria-label="Expiry"
-                      placeholder="MM/YY"
-                      value={card.exp}
-                      onChange={(e) => setCard({ ...card, exp: e.target.value })}
-                      className={inputCls}
-                    />
-                    <input
-                      aria-label="CVV"
-                      placeholder="CVV"
-                      inputMode="numeric"
-                      value={card.cvv}
-                      onChange={(e) => setCard({ ...card, cvv: e.target.value })}
-                      className={inputCls}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          <p className="muted mt-3.5 text-xs leading-relaxed">
+            {method === 'Card'
+              ? 'Supports Nigerian Verve, Mastercard, and Visa cards via 3D Secure.'
+              : method === 'Bank transfer'
+                ? 'Paystack generates a dedicated dynamic virtual NUBAN account for your exact order total.'
+                : 'Paystack provides an instant USSD string for GTBank, Access, Zenith, UBA, First Bank, and Kuda.'}
+          </p>
 
-          {method === 'Bank transfer' && (
-            <div className="mt-4 rounded-xl border border-[var(--border)] bg-slate-50/70 p-3.5 text-xs leading-relaxed dark:bg-midnight-900">
-              Transfer <strong className="text-slate-900 dark:text-white">{naira(f.total)}</strong> to{' '}
-              <strong className="text-slate-900 dark:text-white">Titan Trust Bank · 0293 841 029</strong> (COORDINA / Paystack Virtual Account). Valid for 30 minutes.
-            </div>
-          )}
-
-          {method === 'USSD' && (
-            <div className="mt-4 space-y-2 rounded-xl border border-[var(--border)] bg-slate-50/70 p-3.5 text-xs dark:bg-midnight-900">
-              <label htmlFor="bank" className="block font-medium text-slate-700 dark:text-slate-300">
-                Select Bank
-              </label>
-              <select id="bank" value={ussd} onChange={(e) => setUssd(e.target.value)} className={inputCls}>
-                {['GTBank', 'Access', 'Zenith', 'First Bank', 'UBA', 'Kuda'].map((b) => (
-                  <option key={b}>{b}</option>
-                ))}
-              </select>
-              <p className="pt-1 text-slate-600 dark:text-slate-300">
-                Dial{' '}
-                <strong className="font-mono text-slate-900 dark:text-white">
-                  {ussd === 'GTBank' ? '*737*000*' : ussd === 'Access' ? '*901*000*' : '*966*000*'}
-                  {Math.round(f.total)}#
-                </strong>{' '}
-                to complete payment.
-              </p>
+          {!isPaystackConfigured() && (
+            <div className="mt-3 rounded-xl border border-amber-400/50 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              <strong>Configuration Notice:</strong> Add{' '}
+              <code className="font-mono">VITE_PAYSTACK_PUBLIC_KEY</code> in Vercel Environment Variables to enable live Naira card/transfer payments.
             </div>
           )}
         </Card>
       )}
 
+      {gatewayError && (
+        <div className="mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-3.5 text-xs font-medium text-rose-700 dark:text-rose-300">
+          {gatewayError}
+        </div>
+      )}
+
       {/* Fee Summary */}
       <Card className="mt-4 space-y-2.5 p-5 text-xs">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Order Summary</h3>
-          {sub === 0 && (
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+            Order Summary
+          </h3>
+          {f.total === 0 && (
             <span className="rounded-full bg-neon-50 px-2.5 py-0.5 text-[11px] font-semibold text-neon-700 dark:bg-neon-500/15 dark:text-neon-400">
               Free Admission · ₦0 Fee
             </span>
@@ -330,16 +406,21 @@ export default function Checkout() {
         </div>
         <div className="flex justify-between">
           <span className="muted">Tickets Subtotal</span>
-          <span className="font-medium text-slate-900 dark:text-white">{naira(sub)}</span>
+          <span className="font-medium text-slate-900 dark:text-white">
+            {rawSub === 0 ? 'Free' : naira(rawSub)}
+          </span>
         </div>
-        {sub === 0 ? (
+        {discountAmount > 0 && (
+          <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+            <span>Promo Discount ({promoCheck?.code})</span>
+            <span>−{naira(discountAmount)}</span>
+          </div>
+        )}
+        {f.total === 0 ? (
           <div className="rounded-xl border border-neon-500/20 bg-neon-50/50 p-2.5 text-slate-700 dark:bg-neon-500/10 dark:text-slate-300">
             <p className="flex items-center gap-1.5 font-medium text-neon-700 dark:text-neon-400">
               <Icon name="check_circle" className="text-sm" />
               <span>No Processing Fees for Free Events</span>
-            </p>
-            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-              Free events carry ₦0 attendee service or processing charge. Organisers cover hosting and verification fees directly.
             </p>
           </div>
         ) : (
@@ -360,30 +441,42 @@ export default function Checkout() {
         )}
         <div className="flex justify-between border-t border-[var(--border)] pt-2.5 text-base font-bold text-slate-900 dark:text-white">
           <span>Total</span>
-          <span className={sub === 0 ? 'text-neon-600 dark:text-neon-400' : 'text-slate-900 dark:text-white'}>
-            {naira(f.total)}
+          <span
+            className={
+              f.total === 0
+                ? 'text-neon-600 dark:text-neon-400'
+                : 'text-slate-900 dark:text-white'
+            }
+          >
+            {f.total === 0 ? 'Free' : naira(f.total)}
           </span>
         </div>
       </Card>
 
-      {/* Docked Bottom Checkout Bar (Mobile tab bar is hidden on /checkout -> zero overlap!) */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] backdrop-blur-xl dark:bg-midnight-900/95">
+      {/* Docked Bottom Checkout Bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-white/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] pt-3 backdrop-blur-xl dark:bg-midnight-900/95">
         <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
           <div>
             <p className="muted text-[11px]">Total due</p>
-            <p className="text-lg font-bold text-slate-900 dark:text-white">{naira(f.total)}</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white">
+              {f.total === 0 ? 'Free' : naira(f.total)}
+            </p>
           </div>
           {isUnverified ? (
             <Button
               size="lg"
-              className="px-6 bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-md shadow-amber-600/20"
+              className="bg-amber-600 px-6 font-bold text-white shadow-md shadow-amber-600/20 hover:bg-amber-700"
               onClick={pay}
             >
               <Icon name="lock" /> Verify Email to Pay
             </Button>
           ) : (
-            <Button size="lg" className="px-8" disabled={paying || !cardOk} onClick={pay}>
-              {paying ? 'Confirming…' : sub === 0 ? 'Confirm Free RSVP' : `Pay ${naira(f.total)}`}
+            <Button size="lg" className="px-8" disabled={paying} onClick={pay}>
+              {paying
+                ? 'Processing…'
+                : f.total === 0
+                  ? 'Confirm Free RSVP'
+                  : `Pay ${naira(f.total)}`}
             </Button>
           )}
         </div>

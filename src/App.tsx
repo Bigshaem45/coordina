@@ -67,15 +67,18 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <NativeLifecycleBridge />
-        <Suspense fallback={<div className="p-4"><Skeleton className="h-40" /></div>}>
+        <Suspense
+          fallback={
+            <div className="p-4">
+              <Skeleton className="h-40" />
+            </div>
+          }
+        >
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/team" element={<Team />} />
-            <Route path="/venue-portal/:token" element={<VenuePortal />} />
-            <Route path="/venue-portal" element={<VenuePortal />} />
-            <Route path="/scanner" element={<GateScanner />} />
             <Route element={<Layout />}>
               <Route path="home" element={<Home />} />
               <Route path="discover" element={<Discover />} />
@@ -90,6 +93,9 @@ export default function App() {
               <Route path="squad" element={<SquadList />} />
               <Route path="squad/:id" element={<SquadDetail />} />
               <Route path="organiser" element={<Organiser />} />
+              <Route path="venue-portal" element={<VenuePortal />} />
+              <Route path="venue-portal/:token" element={<VenuePortal />} />
+              <Route path="scanner" element={<GateScanner />} />
               <Route path="admin" element={<Admin />} />
               <Route path="design-system" element={<DesignSystem />} />
               <Route path="*" element={<NotFound />} />

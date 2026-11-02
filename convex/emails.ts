@@ -8,9 +8,13 @@ export const sendEmailAction = action({
     html: v.string(),
   },
   handler: async (_ctx, args) => {
-    const apiKey = process.env.SENDGRID_API_KEY || '';
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'apvdirect1@gmail.com';
-    const fromName = process.env.SENDGRID_FROM_NAME || 'COORDINA';
+    const env = ((globalThis as any).process?.env ?? {}) as Record<
+      string,
+      string | undefined
+    >;
+    const apiKey = env.SENDGRID_API_KEY || '';
+    const fromEmail = env.SENDGRID_FROM_EMAIL || 'apvdirect1@gmail.com';
+    const fromName = env.SENDGRID_FROM_NAME || 'COORDINA';
 
     if (!apiKey) {
       return { success: false, error: 'SENDGRID_API_KEY is not configured in Convex environment' };

@@ -69,13 +69,14 @@ export function Badge({
   children,
   className = '',
 }: {
-  tone?: 'brand' | 'gold' | 'neon' | 'coral' | 'muted' | 'dark';
+  tone?: 'brand' | 'gold' | 'amber' | 'neon' | 'coral' | 'muted' | 'dark';
   children: ReactNode;
   className?: string;
 }) {
   const t = {
     brand: 'bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300',
     gold: 'bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-300',
+    amber: 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
     neon: 'bg-neon-50 text-neon-700 dark:bg-neon-500/15 dark:text-neon-400',
     coral: 'bg-coral-50 text-coral-600 dark:bg-coral-500/15 dark:text-coral-400',
     muted: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
@@ -158,25 +159,44 @@ export function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`animate-pulse rounded-2xl bg-slate-200/80 dark:bg-slate-800 ${className}`} aria-hidden />;
 }
 
+export function SkeletonCard({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`surface overflow-hidden rounded-2xl p-4 shadow-card ${className}`}
+      aria-hidden
+    >
+      <div className="h-36 w-full animate-pulse rounded-xl bg-slate-200/80 dark:bg-slate-800" />
+      <div className="mt-3 h-4 w-3/4 animate-pulse rounded-lg bg-slate-200/80 dark:bg-slate-800" />
+      <div className="mt-2 h-3 w-1/2 animate-pulse rounded-lg bg-slate-200/80 dark:bg-slate-800" />
+    </div>
+  );
+}
+
 export function EmptyState({
   icon = 'event_busy',
   title,
   text,
+  body,
   action,
+  cta,
 }: {
   icon?: string;
   title: string;
   text?: string;
+  body?: string;
   action?: ReactNode;
+  cta?: ReactNode;
 }) {
+  const description = text ?? body;
+  const ctaNode = action ?? cta;
   return (
     <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/15 dark:text-brand-300">
         <Icon name={icon} className="text-2xl" />
       </div>
       <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-      {text && <p className="muted max-w-xs text-sm leading-relaxed">{text}</p>}
-      {action && <div className="mt-2">{action}</div>}
+      {description && <p className="muted max-w-xs text-sm leading-relaxed">{description}</p>}
+      {ctaNode && <div className="mt-2">{ctaNode}</div>}
     </div>
   );
 }

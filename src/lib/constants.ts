@@ -62,3 +62,4 @@ export function minPrice(e: Pick<CEvent, 'tiers'>): number {
   if (!e.tiers || e.tiers.length === 0) return 0;
   return Math.min(...e.tiers.map((t) => t.price));
 }
+

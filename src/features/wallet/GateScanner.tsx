@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Haptics, NotificationType } from '@capacitor/haptics';
 import { Icon } from '../../design-system/Icon';
-import { Badge, Button, Card } from '../../design-system/ui';
-import { useAllEvents, useStore } from '../../store';
+import { Badge, Button, Card, EmptyState } from '../../design-system/ui';
+import { useAuth, useStore } from '../../store';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 
@@ -18,10 +19,15 @@ interface ScanResult {
 }
 
 export default function GateScanner() {
-  const user = useStore((s) => s.user);
-  const tickets = useStore((s) => s.tickets);
-  const checkInStore = useStore((s) => s.checkIn);
-  const allEvents = useAllEvents();
+  const { user, isLoading } = useAuth();
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+
+  const authorized =
+    Boolean(user) &&
+    Boolean(user?.emailVerified) &&
+    (user?.role === 'organiser' ||
+      user?.role === 'venue_manager' ||
+      user?.role === 'admin');
 
   const [active, setActive] = useState(false);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
@@ -36,7 +42,6 @@ export default function GateScanner() {
   const qrRef = useRef<Html5Qrcode | null>(null);
   const containerId = 'coordina-gate-reader';
 
-  // Play audio chime for feedback
   const playSound = (isSuccess: boolean) => {
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -46,22 +51,22 @@ export default function GateScanner() {
       gain.connect(ctx.destination);
 
       if (isSuccess) {
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
         gain.gain.setValueAtTime(0.3, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
         osc.start();
         osc.stop(ctx.currentTime + 0.25);
       } else {
-        osc.frequency.setValueAtTime(220, ctx.currentTime); // A3
-        osc.frequency.setValueAtTime(164.81, ctx.currentTime + 0.15); // E3
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.setValueAtTime(164.81, ctx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.35, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
         osc.start();
         osc.stop(ctx.currentTime + 0.35);
       }
     } catch {
-      // Audio context might be restricted before user gesture
+      // Audio context optional before gesture
     }
   };
 
@@ -75,40 +80,32 @@ export default function GateScanner() {
     }
   };
 
-  // Validate scanned QR code payload
   const processCode = async (decodedText: string) => {
-    if (scanning) return;
+    if (scanning || !user) return;
     setScanning(true);
 
-    let extractedCode = decodedText.trim();
-    let attendeeFromPayload = '';
-    let tierFromPayload = '';
-    let eventFromPayload = '';
-
-    // Check if JSON payload
+    let displayCode = decodedText.trim();
     try {
       if (decodedText.startsWith('{') && decodedText.endsWith('}')) {
         const parsed = JSON.parse(decodedText);
-        extractedCode = parsed.ticketCode || extractedCode;
-        attendeeFromPayload = parsed.attendeeName || '';
-        tierFromPayload = parsed.tierName || '';
-        eventFromPayload = parsed.eventTitle || '';
+        if (parsed.ticketCode) displayCode = parsed.ticketCode;
       }
     } catch {
-      // Plain text code
+      // Plain ticket code
     }
 
-    // Clean prefix like "CD:TKT-" or "CD-"
-    const cleanUpper = extractedCode.toUpperCase();
-    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const nowStr = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
 
     let result: ScanResult;
 
     try {
-      // 1. Try Live Convex backend validation first
       const backendRes = await convex.mutation(api.orders.checkInTicket, {
-        ticketCode: extractedCode,
-        scannerName: user?.name || 'Gate Officer 1',
+        ticketCode: decodedText.trim(),
+        scannerUserId: user._id as any,
       });
 
       if (backendRes.success && backendRes.ticket) {
@@ -116,95 +113,26 @@ export default function GateScanner() {
         triggerHaptic(true);
         result = {
           status: 'valid',
-          message: 'Access Granted · Valid Ticket',
-          ticketCode: extractedCode,
-          attendeeName: backendRes.ticket.attendeeName || attendeeFromPayload || 'Verified Attendee',
-          tierName: backendRes.ticket.tierName || tierFromPayload || 'General Admission',
-          eventTitle: (backendRes.ticket as any).eventTitle || eventFromPayload || 'Live Event Confirmed',
+          message: backendRes.message || 'Access Granted · Valid Ticket',
+          ticketCode: backendRes.ticket.ticketCode || displayCode,
+          attendeeName: backendRes.ticket.attendeeName,
+          tierName: backendRes.ticket.tierName,
+          eventTitle: (backendRes.ticket as any).eventTitle,
           timestamp: nowStr,
         };
-      } else if (backendRes.ticket?.status === 'used' || backendRes.message?.includes('ALREADY USED')) {
+      } else if (
+        backendRes.ticket?.status === 'used' ||
+        backendRes.message?.includes('ALREADY')
+      ) {
         playSound(false);
         triggerHaptic(false);
         result = {
           status: 'already_used',
-          message: backendRes.message || 'Ticket has ALREADY been scanned at the gate.',
-          ticketCode: extractedCode,
+          message: backendRes.message || 'Ticket has ALREADY been checked in.',
+          ticketCode: backendRes.ticket?.ticketCode || displayCode,
           attendeeName: backendRes.ticket?.attendeeName,
           tierName: backendRes.ticket?.tierName,
-          timestamp: nowStr,
-        };
-      } else {
-        // Fallback to local store check (for offline wallet tickets)
-        const localTicket = tickets.find(
-          (t) =>
-            t.id.toUpperCase() === cleanUpper ||
-            t.id.toUpperCase() === cleanUpper.replace(/^CD:/, '') ||
-            cleanUpper.includes(t.id.toUpperCase())
-        );
-
-        if (localTicket) {
-          const usedSet = (window as any).__coordina_gate_scanned ?? new Set<string>();
-          (window as any).__coordina_gate_scanned = usedSet;
-
-          if (usedSet.has(localTicket.id)) {
-            playSound(false);
-            triggerHaptic(false);
-            result = {
-              status: 'already_used',
-              message: 'Warning: Ticket already scanned on this device',
-              ticketCode: localTicket.id,
-              attendeeName: localTicket.owner || 'Attendee',
-              tierName: localTicket.tierName,
-              eventTitle: allEvents.find((e) => e.id === localTicket.eventId)?.title,
-              timestamp: nowStr,
-            };
-          } else {
-            usedSet.add(localTicket.id);
-            checkInStore(localTicket.eventId);
-            playSound(true);
-            triggerHaptic(true);
-            result = {
-              status: 'valid',
-              message: 'Access Granted (Offline Verified)',
-              ticketCode: localTicket.id,
-              attendeeName: localTicket.owner || 'Verified Guest',
-              tierName: localTicket.tierName,
-              eventTitle: allEvents.find((e) => e.id === localTicket.eventId)?.title,
-              timestamp: nowStr,
-            };
-          }
-        } else {
-          playSound(false);
-          triggerHaptic(false);
-          result = {
-            status: 'invalid',
-            message: 'Invalid / Unrecognized ticket signature',
-            ticketCode: extractedCode,
-            timestamp: nowStr,
-          };
-        }
-      }
-    } catch {
-      // Offline fallback when backend unreachable
-      const localTicket = tickets.find(
-        (t) =>
-          t.id.toUpperCase() === cleanUpper ||
-          t.id.toUpperCase() === cleanUpper.replace(/^CD:/, '') ||
-          cleanUpper.includes(t.id.toUpperCase())
-      );
-
-      if (localTicket) {
-        checkInStore(localTicket.eventId);
-        playSound(true);
-        triggerHaptic(true);
-        result = {
-          status: 'valid',
-          message: 'Access Granted (Local Offline Pass)',
-          ticketCode: localTicket.id,
-          attendeeName: localTicket.owner || 'Verified Guest',
-          tierName: localTicket.tierName,
-          eventTitle: allEvents.find((e) => e.id === localTicket.eventId)?.title,
+          eventTitle: (backendRes.ticket as any)?.eventTitle,
           timestamp: nowStr,
         };
       } else {
@@ -212,11 +140,20 @@ export default function GateScanner() {
         triggerHaptic(false);
         result = {
           status: 'invalid',
-          message: 'Ticket not found in local or remote registry',
-          ticketCode: extractedCode,
+          message: backendRes.message || 'Invalid or unauthorized ticket signature.',
+          ticketCode: displayCode,
           timestamp: nowStr,
         };
       }
+    } catch (err: any) {
+      playSound(false);
+      triggerHaptic(false);
+      result = {
+        status: 'invalid',
+        message: err?.message || 'Unable to verify ticket with COORDINA registry.',
+        ticketCode: displayCode,
+        timestamp: nowStr,
+      };
     }
 
     setCurrentResult(result);
@@ -224,8 +161,8 @@ export default function GateScanner() {
     setScanning(false);
   };
 
-  // Start camera stream
   const startCamera = async () => {
+    if (!authorized) return;
     setCameraError(null);
     try {
       if (!qrRef.current) {
@@ -245,49 +182,42 @@ export default function GateScanner() {
         (decodedText) => {
           processCode(decodedText);
         },
-        () => {
-          // ignore scan frame drops
-        }
+        () => {}
       );
 
       setActive(true);
 
-      // Check torch capability
       try {
         const capabilities = qrRef.current.getRunningTrackCapabilities() as any;
-        if (capabilities?.torch) {
-          setHasTorch(true);
-        }
+        if (capabilities?.torch) setHasTorch(true);
       } catch {
         setHasTorch(false);
       }
     } catch (err: any) {
-      console.warn('Camera start error:', err);
-      setCameraError(err?.message || 'Could not access device camera. Please check camera permissions.');
+      setCameraError(
+        err?.message || 'Could not access device camera. Please check camera permissions.'
+      );
       setActive(false);
     }
   };
 
-  // Stop camera stream
   const stopCamera = async () => {
     if (qrRef.current && active) {
       try {
         await qrRef.current.stop();
-      } catch (err) {
-        console.warn('Camera stop error:', err);
+      } catch {
+        // Ignore stop errors
       }
       setActive(false);
       setTorchOn(false);
     }
   };
 
-  // Flip camera between front & back
   const flipCamera = async () => {
     await stopCamera();
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
   };
 
-  // Toggle torch/flash
   const toggleTorch = async () => {
     if (!qrRef.current || !hasTorch) return;
     try {
@@ -295,30 +225,83 @@ export default function GateScanner() {
         advanced: [{ torch: !torchOn } as any],
       });
       setTorchOn(!torchOn);
-    } catch (err) {
-      console.warn('Torch toggle error:', err);
+    } catch {
+      // Ignore torch error
     }
   };
 
   useEffect(() => {
+    if (!authorized) return;
     startCamera();
     return () => {
       if (qrRef.current && qrRef.current.isScanning) {
         qrRef.current.stop().catch(() => {});
       }
     };
-  }, [facingMode]);
+  }, [facingMode, authorized]);
+
+  if (!isLoading && !user) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-10">
+        <EmptyState
+          icon="lock"
+          title="Staff Sign-In Required"
+          text="Log in with an Event Planner, Venue Manager, or Admin account to operate Gate Check-In."
+          action={
+            <Link to="/auth?mode=signin&redirect=/scanner">
+              <Button>Log In</Button>
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
+  if (user && !user.emailVerified) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-10">
+        <EmptyState
+          icon="mark_email_unread"
+          title="Email Verification Required"
+          text="Verify your staff email address before scanning attendee tickets at the gate."
+          action={
+            <Button onClick={() => setVerifyModalOpen(true)}>Verify Email Now</Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  if (user && !authorized) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-10">
+        <EmptyState
+          icon="gpp_bad"
+          title="Gate Scanner Restricted"
+          text="Attendee accounts cannot scan or validate entry passes. Switch to an Event Planner or Venue Manager account."
+          action={
+            <Link to="/tickets">
+              <Button variant="outline">Back to My Tickets</Button>
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   const validCount = history.filter((h) => h.status === 'valid').length;
   const invalidCount = history.filter((h) => h.status !== 'valid').length;
 
   return (
     <div className="mx-auto max-w-xl space-y-4 px-4 py-4 md:px-0">
-      {/* Header Bar */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Gate Pass Scanner</h1>
-          <p className="muted text-xs">PWA High-Speed Gate Validation · Offline &amp; Real-time</p>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">
+            Gate Pass Scanner
+          </h1>
+          <p className="muted text-xs">
+            Officer: {user?.name} ({user?.role}) · Live Cryptographic Registry
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Badge tone="neon">{validCount} Checked In</Badge>
@@ -326,26 +309,23 @@ export default function GateScanner() {
         </div>
       </div>
 
-      {/* Camera Viewfinder Container */}
+      {/* Camera Viewfinder */}
       <div className="relative overflow-hidden rounded-3xl bg-slate-950 shadow-2xl">
-        <div id={containerId} className="w-full aspect-square bg-slate-950" />
+        <div id={containerId} className="aspect-square w-full bg-slate-950" />
 
-        {/* Reticle Overlay */}
         {active && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
             <div className="relative h-60 w-60 rounded-2xl border-2 border-dashed border-brand-400 bg-brand-500/10 shadow-[0_0_30px_rgba(99,102,241,0.25)]">
-              {/* Corner brackets */}
-              <div className="absolute -top-1 -left-1 h-6 w-6 border-t-4 border-l-4 border-brand-400 rounded-tl-lg" />
-              <div className="absolute -top-1 -right-1 h-6 w-6 border-t-4 border-r-4 border-brand-400 rounded-tr-lg" />
-              <div className="absolute -bottom-1 -left-1 h-6 w-6 border-b-4 border-l-4 border-brand-400 rounded-bl-lg" />
-              <div className="absolute -bottom-1 -right-1 h-6 w-6 border-b-4 border-r-4 border-brand-400 rounded-br-lg" />
-              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-brand-400/80 animate-pulse" />
+              <div className="absolute -left-1 -top-1 h-6 w-6 rounded-tl-lg border-l-4 border-t-4 border-brand-400" />
+              <div className="absolute -right-1 -top-1 h-6 w-6 rounded-tr-lg border-r-4 border-t-4 border-brand-400" />
+              <div className="absolute -bottom-1 -left-1 h-6 w-6 rounded-bl-lg border-b-4 border-l-4 border-brand-400" />
+              <div className="absolute -bottom-1 -right-1 h-6 w-6 rounded-br-lg border-b-4 border-r-4 border-brand-400" />
+              <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 animate-pulse bg-brand-400/80" />
             </div>
           </div>
         )}
 
-        {/* Camera Controls Overlay */}
-        <div className="absolute bottom-4 inset-x-4 flex items-center justify-between">
+        <div className="absolute inset-x-4 bottom-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -359,7 +339,7 @@ export default function GateScanner() {
               type="button"
               onClick={flipCamera}
               className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900/80 text-white backdrop-blur-md transition hover:bg-slate-800"
-              title="Flip Camera (Front/Back)"
+              title="Flip Camera"
             >
               <Icon name="flip_camera_ios" className="text-xl" />
             </button>
@@ -368,9 +348,11 @@ export default function GateScanner() {
                 type="button"
                 onClick={toggleTorch}
                 className={`flex h-11 w-11 items-center justify-center rounded-2xl backdrop-blur-md transition ${
-                  torchOn ? 'bg-amber-400 text-slate-950 font-bold' : 'bg-slate-900/80 text-white hover:bg-slate-800'
+                  torchOn
+                    ? 'bg-amber-400 font-bold text-slate-950'
+                    : 'bg-slate-900/80 text-white hover:bg-slate-800'
                 }`}
-                title="Toggle Flash / Torch"
+                title="Toggle Torch"
               >
                 <Icon name={torchOn ? 'flash_on' : 'flash_off'} className="text-xl" />
               </button>
@@ -381,9 +363,8 @@ export default function GateScanner() {
           </span>
         </div>
 
-        {/* Error overlay */}
         {cameraError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-slate-950/90 backdrop-blur-md">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 p-6 text-center text-white backdrop-blur-md">
             <Icon name="videocam_off" className="text-4xl text-coral-400" />
             <p className="mt-3 text-sm font-semibold">{cameraError}</p>
             <Button size="sm" className="mt-4" onClick={startCamera}>
@@ -393,16 +374,16 @@ export default function GateScanner() {
         )}
       </div>
 
-      {/* Live Scan Result High-Contrast Modal/Banner */}
+      {/* Live Scan Result Banner */}
       {currentResult && (
         <div
           role="status"
-          className={`animate-in fade-in zoom-in-95 rounded-2xl border p-4 shadow-xl transition-all ${
+          className={`rounded-2xl border p-4 shadow-xl transition-all ${
             currentResult.status === 'valid'
               ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-950 dark:text-emerald-100'
               : currentResult.status === 'already_used'
-              ? 'border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100'
-              : 'border-rose-500/40 bg-rose-500/10 text-rose-950 dark:text-rose-100'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100'
+                : 'border-rose-500/40 bg-rose-500/10 text-rose-950 dark:text-rose-100'
           }`}
         >
           <div className="flex items-start justify-between gap-3">
@@ -412,8 +393,8 @@ export default function GateScanner() {
                   currentResult.status === 'valid'
                     ? 'bg-emerald-500 text-white'
                     : currentResult.status === 'already_used'
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'bg-rose-500 text-white'
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-rose-500 text-white'
                 }`}
               >
                 <Icon
@@ -421,8 +402,8 @@ export default function GateScanner() {
                     currentResult.status === 'valid'
                       ? 'check_circle'
                       : currentResult.status === 'already_used'
-                      ? 'warning'
-                      : 'error'
+                        ? 'warning'
+                        : 'error'
                   }
                   className="text-2xl"
                   filled
@@ -442,16 +423,30 @@ export default function GateScanner() {
             </button>
           </div>
 
-          {(currentResult.attendeeName || currentResult.tierName) && (
+          {(currentResult.attendeeName ||
+            currentResult.tierName ||
+            currentResult.eventTitle) && (
             <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-white/60 p-3 text-xs dark:bg-slate-900/60">
               <div>
                 <span className="opacity-70">Guest</span>
-                <p className="font-semibold text-slate-900 dark:text-white">{currentResult.attendeeName || 'Guest'}</p>
+                <p className="font-semibold text-slate-900 dark:text-white">
+                  {currentResult.attendeeName || 'Guest'}
+                </p>
               </div>
               <div>
                 <span className="opacity-70">Pass Tier</span>
-                <p className="font-semibold text-slate-900 dark:text-white">{currentResult.tierName || 'Regular'}</p>
+                <p className="font-semibold text-slate-900 dark:text-white">
+                  {currentResult.tierName || 'Standard'}
+                </p>
               </div>
+              {currentResult.eventTitle && (
+                <div className="col-span-2">
+                  <span className="opacity-70">Event</span>
+                  <p className="font-semibold text-slate-900 dark:text-white">
+                    {currentResult.eventTitle}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -464,21 +459,21 @@ export default function GateScanner() {
         </div>
       )}
 
-      {/* Manual Code Input Option (fallback for broken guest screens) */}
+      {/* Manual Ticket Code Entry */}
       <Card className="p-4">
         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-          Manual Code Fallback (if camera unreadable)
+          Manual Ticket Code Entry (if guest screen is damaged)
         </label>
         <div className="mt-2 flex gap-2">
           <input
             aria-label="Manual ticket code"
-            placeholder="e.g. CD-9482-TX or TKT-..."
+            placeholder="Enter pass code e.g. CD-1234-ABCD"
             value={manualCode}
-            onChange={(e) => setManualCode(e.target.value)}
-            className="h-11 flex-1 rounded-xl border border-slate-200 bg-white px-3.5 font-mono text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
+            onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+            className="h-11 flex-1 rounded-xl border border-slate-200 bg-white px-3.5 font-mono text-sm uppercase text-slate-900 placeholder:text-slate-400 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-midnight-800 dark:text-slate-100"
           />
           <Button
-            disabled={!manualCode.trim()}
+            disabled={!manualCode.trim() || scanning}
             onClick={() => {
               processCode(manualCode);
               setManualCode('');
@@ -487,32 +482,14 @@ export default function GateScanner() {
             Verify
           </Button>
         </div>
-
-        {/* Quick test chips from local wallet */}
-        {tickets.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
-            <span className="muted">Quick Test Wallet Pass:</span>
-            {tickets.slice(0, 3).map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => processCode(t.id)}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono hover:border-brand-500 dark:border-slate-700 dark:bg-midnight-900"
-              >
-                {t.id}
-              </button>
-            ))}
-          </div>
-        )}
       </Card>
 
-      {/* Gate Audit Log History */}
       {history.length > 0 && (
         <Card className="divide-y divide-slate-100 p-4 dark:divide-slate-800">
           <h2 className="pb-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Recent Scans at this Gate ({history.length})
+            Session Gate Log ({history.length})
           </h2>
-          {history.slice(0, 6).map((h, i) => (
+          {history.slice(0, 8).map((h, i) => (
             <div key={i} className="flex items-center justify-between py-2 text-xs">
               <div className="flex items-center gap-2">
                 <Icon
@@ -523,7 +500,9 @@ export default function GateScanner() {
                   <p className="font-semibold text-slate-900 dark:text-white">
                     {h.attendeeName || h.ticketCode}
                   </p>
-                  <p className="muted font-mono text-[10px]">{h.ticketCode} · {h.timestamp}</p>
+                  <p className="muted font-mono text-[10px]">
+                    {h.ticketCode} · {h.timestamp}
+                  </p>
                 </div>
               </div>
               <Badge tone={h.status === 'valid' ? 'neon' : 'coral'}>

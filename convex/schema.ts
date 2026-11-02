@@ -504,6 +504,7 @@ export default defineSchema({
     spaceName: v.string(),
     date: v.string(),
     guests: v.number(),
+    notes: v.optional(v.string()),
     estimatedSpend: v.number(),
     status: v.union(v.literal('Requested'), v.literal('Confirmed'), v.literal('Declined')),
     createdAt: v.number(),
