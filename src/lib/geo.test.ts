@@ -149,3 +149,4 @@ describe('COORDINA Plus IP Region Lock enforcement', () => {
     expect(evaluateEventRegionAccess(westAfricaRule, accraBuyer).allowed).toBe(true);
   });
 });
+

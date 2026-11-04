@@ -192,3 +192,4 @@ export default async function handler(req: any, res: any) {
     message: 'Unable to resolve IP region at this moment.',
   });
 }
+
