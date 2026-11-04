@@ -1,5 +1,6 @@
 import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
+import { isOrganizerCoordinaPlus, regionRestrictionValidator } from './geo';
 
 async function hydrateEvent(ctx: any, event: any) {
   const org = await ctx.db.get(event.organizerId);
@@ -11,6 +12,7 @@ async function hydrateEvent(ctx: any, event: any) {
     ...event,
     organizerName: org?.businessName ?? 'Event Host',
     organizerVerified: org?.status === 'verified',
+    organizerCoordinaPlus: isOrganizerCoordinaPlus(org),
     lat: event.lat ?? space?.lat ?? (event.city === 'Abuja' ? 9.0765 : 6.4281),
     lng: event.lng ?? space?.lng ?? (event.city === 'Abuja' ? 7.4698 : 3.4219),
   };
@@ -102,6 +104,8 @@ export const getById = query({
     return {
       ...event,
       organizerName: organizer?.businessName ?? 'Event Host',
+      organizerVerified: organizer?.status === 'verified',
+      organizerCoordinaPlus: isOrganizerCoordinaPlus(organizer),
       lat: event.lat ?? space?.lat ?? (event.city === 'Abuja' ? 9.0765 : 6.4281),
       lng: event.lng ?? space?.lng ?? (event.city === 'Abuja' ? 7.4698 : 3.4219),
       space,
@@ -109,6 +113,7 @@ export const getById = query({
       organizer: organizer
         ? {
             ...organizer,
+            isCoordinaPlus: isOrganizerCoordinaPlus(organizer),
             eventsHosted: orgEventsHosted,
             avgRating: orgTotalRatings > 0 ? Number((orgRatingSum / orgTotalRatings).toFixed(1)) : 0,
             totalReviews: orgTotalRatings,
@@ -133,6 +138,7 @@ export const getOrganizerDashboard = query({
     if (!organizer) {
       return {
         organizer: null,
+        isCoordinaPlus: user.role === 'admin',
         events: [],
         ticketsSold: 0,
         grossRevenue: 0,
@@ -223,6 +229,7 @@ export const getOrganizerDashboard = query({
 
     return {
       organizer,
+      isCoordinaPlus: isOrganizerCoordinaPlus(organizer) || user.role === 'admin',
       events: myEvents,
       ticketsSold: orderTicketsSold,
       grossRevenue,
@@ -265,6 +272,7 @@ export const create = mutation({
     ),
     isFree: v.boolean(),
     expectedAttendance: v.number(),
+    regionRestriction: v.optional(regionRestrictionValidator),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -313,6 +321,15 @@ export const create = mutation({
     const initialTrust =
       org?.status === 'verified' ? ('Organizer Verified' as const) : ('Unverified' as const);
 
+    if (args.regionRestriction?.enabled) {
+      const hasPlus = isOrganizerCoordinaPlus(org) || user.role === 'admin';
+      if (!hasPlus) {
+        throw new Error(
+          'IP Region Lock requires an active COORDINA Plus organizer subscription.'
+        );
+      }
+    }
+
     let resolvedLat = args.lat;
     let resolvedLng = args.lng;
     if (args.spaceId) {
@@ -345,11 +362,160 @@ export const create = mutation({
       action: 'CREATE_EVENT',
       targetEntity: 'events',
       targetId: eventId,
-      details: `Published event "${args.title}" in ${args.city} (${initialTrust})`,
+      details: `Published event "${args.title}" in ${args.city} (${initialTrust})${
+        args.regionRestriction?.enabled
+          ? ` [IP Region Lock: ${args.regionRestriction.label}]`
+          : ''
+      }`,
       timestamp: Date.now(),
     });
 
     return eventId;
+  },
+});
+
+export const updateEventRegionRestriction = mutation({
+  args: {
+    userId: v.id('users'),
+    eventId: v.id('events'),
+    regionRestriction: regionRestrictionValidator,
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user || !user.emailVerified) {
+      throw new Error('Verify your organizer email before updating event settings.');
+    }
+
+    const event = await ctx.db.get(args.eventId);
+    if (!event) {
+      throw new Error('Event not found.');
+    }
+
+    const org = await ctx.db
+      .query('organizers')
+      .withIndex('by_userId', (q) => q.eq('userId', user._id))
+      .first();
+
+    if (user.role !== 'admin') {
+      if (!org || String(org._id) !== String(event.organizerId)) {
+        throw new Error('You can only configure IP region locks on your own events.');
+      }
+      if (!isOrganizerCoordinaPlus(org)) {
+        throw new Error(
+          'IP Region Lock is an exclusive COORDINA Plus feature. Upgrade your studio to enable regional IP gating.'
+        );
+      }
+    }
+
+    await ctx.db.patch(event._id, {
+      regionRestriction: args.regionRestriction,
+    });
+
+    await ctx.db.insert('audit_logs', {
+      actorName: org?.businessName ?? user.name,
+      actorRole: user.role,
+      actorId: user._id,
+      action: args.regionRestriction.enabled ? 'ENABLE_REGION_LOCK' : 'DISABLE_REGION_LOCK',
+      targetEntity: 'events',
+      targetId: event._id,
+      details: args.regionRestriction.enabled
+        ? `Enabled IP Region Lock on "${event.title}" -> ${args.regionRestriction.label}`
+        : `Disabled IP Region Lock on "${event.title}" (open globally)`,
+      timestamp: Date.now(),
+    });
+
+    return {
+      success: true,
+      regionRestriction: args.regionRestriction,
+    };
+  },
+});
+
+export const activateCoordinaPlus = mutation({
+  args: {
+    userId: v.id('users'),
+    plan: v.union(v.literal('monthly'), v.literal('annual')),
+    transactionRef: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) throw new Error('Account not found.');
+    if (!user.emailVerified) {
+      throw new Error('Please verify your email address before subscribing to COORDINA Plus.');
+    }
+    if (user.role !== 'organiser' && user.role !== 'admin') {
+      throw new Error('Only Event Organizer accounts can subscribe to COORDINA Plus.');
+    }
+
+    let org = await ctx.db
+      .query('organizers')
+      .withIndex('by_userId', (q) => q.eq('userId', user._id))
+      .first();
+
+    const now = Date.now();
+    const durationMs =
+      args.plan === 'annual' ? 365 * 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+    const baseExpiry =
+      org?.coordinaPlusExpiresAt && org.coordinaPlusExpiresAt > now
+        ? org.coordinaPlusExpiresAt
+        : now;
+    const expiresAt = baseExpiry + durationMs;
+
+    if (!org) {
+      const orgId = await ctx.db.insert('organizers', {
+        userId: user._id,
+        businessName: user.name,
+        contactEmail: user.email,
+        contactPhone: user.phone ?? '',
+        status: 'pending',
+        riskScore: 30,
+        tier: 'coordina_plus',
+        coordinaPlus: true,
+        coordinaPlusPlan: args.plan,
+        coordinaPlusSince: now,
+        coordinaPlusExpiresAt: expiresAt,
+        coordinaPlusRef: args.transactionRef,
+        createdAt: now,
+      });
+      org = await ctx.db.get(orgId);
+    } else {
+      await ctx.db.patch(org._id, {
+        tier: 'coordina_plus',
+        coordinaPlus: true,
+        coordinaPlusPlan: args.plan,
+        coordinaPlusSince: org.coordinaPlusSince ?? now,
+        coordinaPlusExpiresAt: expiresAt,
+        coordinaPlusRef: args.transactionRef,
+      });
+      org = await ctx.db.get(org._id);
+    }
+
+    await ctx.db.insert('notifications', {
+      userId: user._id,
+      title: 'COORDINA Plus Activated!',
+      message: `Your ${args.plan} COORDINA Plus membership is live. You can now lock ticket sales to specific IP regions on new and published events.`,
+      type: 'system',
+      actionUrl: '/organiser',
+      read: false,
+      createdAt: now,
+    });
+
+    await ctx.db.insert('audit_logs', {
+      actorName: org?.businessName ?? user.name,
+      actorRole: user.role,
+      actorId: user._id,
+      action: 'ACTIVATE_COORDINA_PLUS',
+      targetEntity: 'organizers',
+      targetId: String(org?._id ?? user._id),
+      details: `Activated COORDINA Plus (${args.plan}) · Ref: ${args.transactionRef}`,
+      timestamp: now,
+    });
+
+    return {
+      success: true,
+      expiresAt,
+      plan: args.plan,
+    };
   },
 });
 

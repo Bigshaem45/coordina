@@ -17,6 +17,8 @@ import type {
 } from '../types';
 import type { PlanItem } from '../lib/clash';
 import { toast } from '../lib/fx';
+import { detectVisitorGeo, toConvexBuyerGeo } from '../lib/geo';
+import { cleanErrorMessage } from '../lib/errors';
 
 export type { UserRole };
 
@@ -65,7 +67,7 @@ interface UIStoreState {
 
   setCity: (c: City) => Promise<void>;
   setBudget: (n: number) => Promise<void>;
-  addToCart: (l: CartLine) => Promise<void>;
+  addToCart: (l: CartLine) => Promise<boolean>;
   removeFromCart: (eventId: string) => Promise<void>;
   setQty: (eventId: string, qty: number) => Promise<void>;
   swapInCart: (oldId: string, newEventId: string) => Promise<void>;
@@ -102,6 +104,8 @@ export function mapConvexEvent(e: any): CEvent {
     organiserId: String(e.organizerId),
     organiserName: e.organizerName ?? 'Event Host',
     organizerVerified: Boolean(e.organizerVerified),
+    organizerCoordinaPlus: Boolean(e.organizerCoordinaPlus),
+    regionRestriction: e.regionRestriction ?? undefined,
     start: e.start,
     end: e.end,
     image: e.image,
@@ -221,17 +225,21 @@ export const useStore = create<UIStoreState>()(
         const uid = get().sessionUserId;
         if (!uid) {
           toast('Please log in to add events to your plan.');
-          return;
+          return false;
         }
         try {
+          const geo = await detectVisitorGeo();
           await convex.mutation(api.cart.addOrUpdateItem, {
             userId: uid as any,
             eventId: line.eventId as any,
             tierId: line.tierId,
             qty: line.qty,
+            buyerGeo: toConvexBuyerGeo(geo),
           });
+          return true;
         } catch (err: any) {
-          toast(err?.message || 'Could not add event to plan.');
+          toast(cleanErrorMessage(err, 'Could not add event to plan.'));
+          return false;
         }
       },
 
@@ -266,14 +274,16 @@ export const useStore = create<UIStoreState>()(
         const uid = get().sessionUserId;
         if (!uid) return;
         try {
+          const geo = await detectVisitorGeo();
           const res = await convex.mutation(api.cart.swapItem, {
             userId: uid as any,
             oldEventId: oldId as any,
             newEventId: newEventId as any,
+            buyerGeo: toConvexBuyerGeo(geo),
           });
           set({ swapNotice: `Swapped in ${res.title}` });
         } catch (err: any) {
-          toast(err?.message || 'Could not swap event.');
+          toast(cleanErrorMessage(err, 'Could not swap event.'));
         }
       },
 

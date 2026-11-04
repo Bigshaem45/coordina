@@ -1,5 +1,6 @@
 import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
+import { buyerGeoValidator, checkBuyerGeoAllowed, formatBuyerLocation } from './geo';
 
 export const createOrder = mutation({
   args: {
@@ -8,6 +9,7 @@ export const createOrder = mutation({
     customerEmail: v.string(),
     customerPhone: v.optional(v.string()),
     promoCode: v.optional(v.string()),
+    buyerGeo: v.optional(buyerGeoValidator),
     items: v.array(
       v.object({
         eventId: v.id('events'),
@@ -53,6 +55,29 @@ export const createOrder = mutation({
       const event = await ctx.db.get(item.eventId);
       if (!event || event.status !== 'published') {
         throw new Error(`Event "${item.eventTitle}" is no longer available.`);
+      }
+      if (event.regionRestriction?.enabled) {
+        const geoCheck = checkBuyerGeoAllowed(event.regionRestriction, args.buyerGeo);
+        if (!geoCheck.allowed) {
+          await ctx.db.insert('audit_logs', {
+            actorName: args.customerName.trim() || user.name,
+            actorRole: user.role,
+            actorId: user._id,
+            action: 'REGION_LOCK_BLOCKED',
+            targetEntity: 'events',
+            targetId: event._id,
+            details: `Blocked ticket purchase for "${event.title}" (Allowed: ${
+              event.regionRestriction.label
+            }, Buyer IP Location: ${formatBuyerLocation(args.buyerGeo)}${
+              args.buyerGeo?.ip ? ` [${args.buyerGeo.ip}]` : ''
+            })`,
+            timestamp: Date.now(),
+          });
+          throw new Error(
+            geoCheck.reason ||
+              `Ticket sales for "${event.title}" are restricted to ${event.regionRestriction.label}.`
+          );
+        }
       }
       const tier = event.tiers.find((t) => t.id === item.tierId);
       if (!tier) {
@@ -135,6 +160,8 @@ export const createOrder = mutation({
       paymentMethod: args.paymentMethod,
       paymentStatus: 'paid',
       transactionRef: args.transactionRef,
+      buyerIp: args.buyerGeo?.ip,
+      buyerRegion: args.buyerGeo ? formatBuyerLocation(args.buyerGeo) : undefined,
       paidAt: Date.now(),
       createdAt: Date.now(),
     });

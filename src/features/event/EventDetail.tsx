@@ -35,6 +35,7 @@ import {
 } from '../../lib/calendar';
 import { useAddToPlan, EventCard } from '../discover/EventCard';
 import { recommend } from '../../lib/recommend';
+import { evaluateEventRegionAccess, useVisitorGeo } from '../../lib/geo';
 import ReportModal from './ReportModal';
 import RatingModal from './RatingModal';
 
@@ -63,6 +64,8 @@ export default function EventDetail() {
   const [ratingOpen, setRatingOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
+  const isEventRegionLocked = Boolean(eventDetail?.regionRestriction?.enabled);
+  const { geo: visitorGeo, loading: geoLoading, refreshGeo } = useVisitorGeo(isEventRegionLocked);
 
   if (eventDetail === undefined) {
     return (
@@ -116,7 +119,12 @@ export default function EventDetail() {
     event.verificationStatus === 'Organizer Verified' ||
     event.verificationStatus === 'Coordina Trusted';
 
-  const handleBuyNow = () => {
+  const regionAccess = evaluateEventRegionAccess(event.regionRestriction, visitorGeo);
+  const isRegionBlocked =
+    Boolean(event.regionRestriction?.enabled) && !geoLoading && !regionAccess.allowed;
+  const isRegionChecking = Boolean(event.regionRestriction?.enabled) && geoLoading && !visitorGeo;
+
+  const handleBuyNow = async () => {
     if (!user) {
       toast('Please log in to purchase tickets.');
       nav(`/auth?mode=signin&redirect=${encodeURIComponent(loc.pathname)}`);
@@ -126,6 +134,17 @@ export default function EventDetail() {
       toast('Please verify your email before purchasing tickets.');
       setVerifyModalOpen(true);
       return;
+    }
+    if (event.regionRestriction?.enabled) {
+      const latestGeo = visitorGeo ?? (await refreshGeo());
+      const check = evaluateEventRegionAccess(event.regionRestriction, latestGeo);
+      if (!check.allowed) {
+        toast(
+          check.reason ||
+            `Ticket sales for this event are restricted to ${event.regionRestriction.label}.`
+        );
+        return;
+      }
     }
     if (!tier || tier.remaining <= 0) {
       toast('Selected ticket tier is sold out.');
@@ -192,6 +211,12 @@ export default function EventDetail() {
               status={event.verificationStatus ?? 'Unverified'}
               size="sm"
             />
+            {event.regionRestriction?.enabled && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-indigo-400/40 bg-indigo-950/75 px-3 py-1 text-xs font-semibold text-indigo-200 backdrop-blur-md">
+                <Icon name="public" className="text-xs text-indigo-300" />
+                <span>{event.regionRestriction.label} Only</span>
+              </span>
+            )}
           </div>
           <h1 className="mt-2.5 text-2xl font-bold leading-tight text-white sm:text-4xl">
             {event.title}
@@ -362,6 +387,99 @@ export default function EventDetail() {
             <p className="muted mt-2 text-sm leading-relaxed">{event.description}</p>
           </Card>
 
+          {/* COORDINA Plus IP Region Lock Banner */}
+          {event.regionRestriction?.enabled && (
+            <Card
+              className={`border-2 p-5 ${
+                isRegionChecking
+                  ? 'border-indigo-400/40 bg-indigo-50/50 dark:bg-indigo-500/10'
+                  : regionAccess.allowed
+                    ? 'border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-500/10'
+                    : 'border-rose-500/60 bg-gradient-to-br from-rose-500/10 via-amber-500/5 to-transparent'
+              }`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <span
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ${
+                      isRegionChecking
+                        ? 'bg-indigo-500'
+                        : regionAccess.allowed
+                          ? 'bg-emerald-600'
+                          : 'bg-rose-600'
+                    }`}
+                  >
+                    <Icon
+                      name={
+                        isRegionChecking
+                          ? 'radar'
+                          : regionAccess.allowed
+                            ? 'where_to_vote'
+                            : 'location_disabled'
+                      }
+                      className="text-xl"
+                    />
+                  </span>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                        {isRegionChecking
+                          ? 'Verifying Your IP Region…'
+                          : regionAccess.allowed
+                            ? `IP Region Verified: Eligible for ${event.regionRestriction.label}`
+                            : `Ticket Sales Locked to ${event.regionRestriction.label}`}
+                      </h3>
+                      <Badge tone={regionAccess.allowed ? 'neon' : 'coral'}>
+                        COORDINA Plus Geo-Fence
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                      {isRegionChecking ? (
+                        <>
+                          Checking your network IP to confirm you are inside{' '}
+                          <strong>{event.regionRestriction.label}</strong>.
+                        </>
+                      ) : regionAccess.allowed ? (
+                        <>
+                          Your connection (<strong>{regionAccess.userLocationLabel}</strong>
+                          {visitorGeo?.ip ? ` · ${visitorGeo.ip}` : ''}) matches the organizer’s
+                          allowed region (<strong>{event.regionRestriction.label}</strong>).
+                        </>
+                      ) : (
+                        <>
+                          The organizer has restricted ticket purchases for this event to attendees
+                          located in <strong>{event.regionRestriction.label}</strong>. Your current
+                          IP location was detected as{' '}
+                          <strong>{regionAccess.userLocationLabel}</strong>
+                          {visitorGeo?.ip ? ` (${visitorGeo.ip})` : ''}. If you are physically in
+                          this region, disable any VPN or proxy and re-check your IP.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={geoLoading}
+                  onClick={() => {
+                    refreshGeo().then((fresh) => {
+                      const recheck = evaluateEventRegionAccess(event.regionRestriction, fresh);
+                      toast(
+                        recheck.allowed
+                          ? `IP verified in ${recheck.userLocationLabel} — ticket purchase unlocked!`
+                          : `Current IP (${recheck.userLocationLabel}) is outside ${event.regionRestriction?.label}.`
+                      );
+                    });
+                  }}
+                >
+                  <Icon name="refresh" className="text-sm" />
+                  {geoLoading ? 'Checking…' : 'Re-check IP'}
+                </Button>
+              </div>
+            </Card>
+          )}
+
           {/* Ticket Tiers Selection */}
           {tier && (
             <Card className="p-5">
@@ -444,9 +562,14 @@ export default function EventDetail() {
                 {orgName[0]?.toUpperCase() ?? 'O'}
               </div>
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">{orgName}</p>
                   {orgVerified && <VerifiedBadge />}
+                  {(org?.isCoordinaPlus || event.organizerCoordinaPlus) && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-2xs">
+                      <Icon name="workspace_premium" className="text-xs" /> COORDINA Plus
+                    </span>
+                  )}
                 </div>
                 <p className="muted text-xs">
                   {org?.eventsHosted ?? 1} published event{(org?.eventsHosted ?? 1) === 1 ? '' : 's'}{' '}
@@ -602,26 +725,48 @@ export default function EventDetail() {
                 </div>
 
                 <div className="mt-4 space-y-2.5">
-                  <Button full size="lg" onClick={handleBuyNow}>
-                    {user ? 'Buy Ticket Now' : 'Log In to Buy Ticket'}
+                  <Button
+                    full
+                    size="lg"
+                    disabled={isRegionBlocked || isRegionChecking}
+                    onClick={handleBuyNow}
+                  >
+                    {isRegionChecking
+                      ? 'Checking IP Region…'
+                      : isRegionBlocked
+                        ? `Restricted to ${event.regionRestriction?.label}`
+                        : user
+                          ? 'Buy Ticket Now'
+                          : 'Log In to Buy Ticket'}
                   </Button>
                   <Button
                     full
                     size="lg"
                     variant="outline"
+                    disabled={isRegionBlocked || isRegionChecking}
                     onClick={() =>
                       add(event, heroRef.current?.getBoundingClientRect(), tier.id, qty)
                     }
                   >
                     <Icon
-                      name={inCart ? 'check' : user ? 'add' : 'lock'}
+                      name={
+                        isRegionBlocked
+                          ? 'location_disabled'
+                          : inCart
+                            ? 'check'
+                            : user
+                              ? 'add'
+                              : 'lock'
+                      }
                       className="text-base"
                     />
-                    {inCart
-                      ? 'Update in Plan Cart'
-                      : user
-                        ? 'Add to Plan Cart'
-                        : 'Log In to Add to Plan'}
+                    {isRegionBlocked
+                      ? 'Unavailable in Your IP Region'
+                      : inCart
+                        ? 'Update in Plan Cart'
+                        : user
+                          ? 'Add to Plan Cart'
+                          : 'Log In to Add to Plan'}
                   </Button>
                 </div>
               </Card>
@@ -727,14 +872,25 @@ export default function EventDetail() {
             <Button
               variant="outline"
               className="flex-1"
+              disabled={isRegionBlocked || isRegionChecking}
               onClick={() =>
                 add(event, heroRef.current?.getBoundingClientRect(), tier.id, qty)
               }
             >
-              {inCart ? 'Saved' : user ? '+ Plan' : 'Log In'}
+              {isRegionBlocked ? 'Region Locked' : inCart ? 'Saved' : user ? '+ Plan' : 'Log In'}
             </Button>
-            <Button className="flex-1" onClick={handleBuyNow}>
-              {user ? 'Buy Ticket' : 'Log In to Buy'}
+            <Button
+              className="flex-1"
+              disabled={isRegionBlocked || isRegionChecking}
+              onClick={handleBuyNow}
+            >
+              {isRegionChecking
+                ? 'Checking IP…'
+                : isRegionBlocked
+                  ? `${event.regionRestriction?.label} Only`
+                  : user
+                    ? 'Buy Ticket'
+                    : 'Log In to Buy'}
             </Button>
           </div>
         </div>

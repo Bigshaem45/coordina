@@ -11,6 +11,7 @@ import { toast } from '../../lib/fx';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 import { sendVerificationStatusEmail } from '../../lib/email';
+import { cleanErrorMessage } from '../../lib/errors';
 
 type AdminTab =
   | 'Verification Desk'
@@ -344,6 +345,11 @@ export default function Admin() {
                           <strong className="text-slate-800 dark:text-slate-200">
                             {v.organizer?.businessName ?? v.directorName}
                           </strong>{' '}
+                          {v.organizer?.isCoordinaPlus && (
+                            <span className="ml-1 inline-flex items-center gap-0.5 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white">
+                              Plus
+                            </span>
+                          )}{' '}
                           · Venue:{' '}
                           <strong className="text-slate-800 dark:text-slate-200">
                             {v.venueName}
@@ -370,9 +376,37 @@ export default function Admin() {
                       </div>
                     </div>
 
-                    <Button size="sm" variant="outline" onClick={() => setSelectedRecord(v)}>
-                      Inspect Dossier
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {v.organizer?._id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              const nextEnabled = !v.organizer.isCoordinaPlus;
+                              await convex.mutation(api.verification.adminSetCoordinaPlus, {
+                                adminUserId: user._id as any,
+                                organizerId: v.organizer._id,
+                                enabled: nextEnabled,
+                              });
+                              toast(
+                                nextEnabled
+                                  ? `Granted COORDINA Plus to ${v.organizer.businessName}`
+                                  : `Revoked COORDINA Plus for ${v.organizer.businessName}`
+                              );
+                            } catch (err: any) {
+                              toast(cleanErrorMessage(err, 'Unable to update Plus status.'));
+                            }
+                          }}
+                        >
+                          <Icon name="workspace_premium" className="text-sm" />
+                          {v.organizer.isCoordinaPlus ? 'Revoke Plus' : 'Grant Plus'}
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" onClick={() => setSelectedRecord(v)}>
+                        Inspect Dossier
+                      </Button>
+                    </div>
                   </div>
 
                   {v.reviewerNotes && (

@@ -13,6 +13,7 @@ import type * as cart from "../cart.js";
 import type * as emails from "../emails.js";
 import type * as events from "../events.js";
 import type * as files from "../files.js";
+import type * as geo from "../geo.js";
 import type * as orders from "../orders.js";
 import type * as payouts from "../payouts.js";
 import type * as reports from "../reports.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   emails: typeof emails;
   events: typeof events;
   files: typeof files;
+  geo: typeof geo;
   orders: typeof orders;
   payouts: typeof payouts;
   reports: typeof reports;

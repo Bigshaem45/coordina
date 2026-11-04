@@ -14,7 +14,16 @@ import { Link } from 'react-router-dom';
 import { useQuery } from 'convex/react';
 import { Icon } from '../../design-system/Icon';
 import { CATEGORIES, AREAS, CATEGORY_PHOTO } from '../../lib/constants';
-import { Badge, Button, Card, Chip, Cover, EmptyState, Skeleton } from '../../design-system/ui';
+import {
+  Badge,
+  BottomSheet,
+  Button,
+  Card,
+  Chip,
+  Cover,
+  EmptyState,
+  Skeleton,
+} from '../../design-system/ui';
 import {
   useAuth,
   useSpacesQuery,
@@ -33,7 +42,16 @@ import { toast } from '../../lib/fx';
 import { convex } from '../../lib/convex';
 import { api } from '../../../convex/_generated/api';
 import { sendEmail, sendVenueConfirmationRequestEmail } from '../../lib/email';
-import type { Category, Vibe } from '../../types';
+import type { Category, CEvent, RegionRestriction, Vibe } from '../../types';
+import { cleanErrorMessage } from '../../lib/errors';
+import {
+  formatVisitorLocation,
+  isUserCoordinaPlus,
+  NIGERIAN_STATES,
+  REGION_PRESETS,
+  SUPPORTED_COUNTRIES,
+  useVisitorGeo,
+} from '../../lib/geo';
 import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { calculateRiskAssessment } from '../../lib/verification';
 import GateScanner from '../wallet/GateScanner';
@@ -46,7 +64,7 @@ import {
   payWithPaystack,
 } from '../../lib/paystack';
 
-type Tab = 'Dashboard' | 'Create' | 'Verification' | 'Scanner' | 'Payouts';
+type Tab = 'Dashboard' | 'Create' | 'COORDINA Plus' | 'Verification' | 'Scanner' | 'Payouts';
 
 const inputCls =
   'h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-100 dark:placeholder:text-slate-500';
@@ -202,7 +220,7 @@ export default function Organiser() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
               Organiser Studio
             </h1>
@@ -211,9 +229,22 @@ export default function Organiser() {
             ) : (
               <Badge tone="amber">KYC Pending</Badge>
             )}
+            {isUserCoordinaPlus(user) ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-0.5 text-xs font-bold text-white shadow-xs">
+                <Icon name="workspace_premium" className="text-sm" /> COORDINA Plus
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setTab('COORDINA Plus')}
+                className="inline-flex items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-500/20 dark:text-indigo-300"
+              >
+                <Icon name="workspace_premium" className="text-sm" /> Upgrade to Plus
+              </button>
+            )}
           </div>
           <p className="muted mt-0.5 text-sm">
-            {user.organizer?.businessName || user.name} · Manage your events, verification dossiers, gate passes, and payouts.
+            {user.organizer?.businessName || user.name} · Manage your events, IP region locks, verification dossiers, gate passes, and payouts.
           </p>
         </div>
         {tab !== 'Create' && (
@@ -224,18 +255,35 @@ export default function Organiser() {
       </div>
 
       <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
-        {(['Dashboard', 'Create', 'Verification', 'Scanner', 'Payouts'] as Tab[]).map((t) => (
+        {(
+          ['Dashboard', 'Create', 'COORDINA Plus', 'Verification', 'Scanner', 'Payouts'] as Tab[]
+        ).map((t) => (
           <Chip key={t} active={tab === t} onClick={() => setTab(t)}>
-            {t}
+            {t === 'COORDINA Plus' ? '✦ COORDINA Plus' : t}
           </Chip>
         ))}
       </div>
 
       <div className="mt-5">
         {tab === 'Dashboard' ? (
-          <Dashboard user={user} onCreateClick={() => setTab('Create')} onVerifyClick={() => setTab('Verification')} />
+          <Dashboard
+            user={user}
+            onCreateClick={() => setTab('Create')}
+            onVerifyClick={() => setTab('Verification')}
+            onUpgradePlus={() => setTab('COORDINA Plus')}
+          />
         ) : tab === 'Create' ? (
-          <Create user={user} onDone={() => setTab('Verification')} />
+          <Create
+            user={user}
+            onDone={() => setTab('Verification')}
+            onUpgradePlus={() => setTab('COORDINA Plus')}
+          />
+        ) : tab === 'COORDINA Plus' ? (
+          <CoordinaPlusPanel
+            user={user}
+            onCreateClick={() => setTab('Create')}
+            onDashboardClick={() => setTab('Dashboard')}
+          />
         ) : tab === 'Verification' ? (
           <OrganizerVerificationPortal user={user} onCreateClick={() => setTab('Create')} />
         ) : tab === 'Scanner' ? (
@@ -252,10 +300,12 @@ function Dashboard({
   user,
   onCreateClick,
   onVerifyClick,
+  onUpgradePlus,
 }: {
   user: SessionUser;
   onCreateClick: () => void;
   onVerifyClick: () => void;
+  onUpgradePlus: () => void;
 }) {
   const dash = useQuery(api.events.getOrganizerDashboard, { userId: user._id as any });
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
@@ -263,6 +313,18 @@ function Dashboard({
   const [pct, setPct] = useState(10);
   const [selectedPromoEvent, setSelectedPromoEvent] = useState<string>('');
   const [savingPromo, setSavingPromo] = useState(false);
+
+  const [regionModalEvent, setRegionModalEvent] = useState<CEvent | null>(null);
+  const [draftRegion, setDraftRegion] = useState<RegionRestriction>({
+    enabled: false,
+    mode: 'state',
+    label: 'Abuja (FCT), Nigeria',
+    allowedCountries: ['NG'],
+    allowedStates: ['Abuja (FCT)', 'FC'],
+  });
+  const [savingRegion, setSavingRegion] = useState(false);
+
+  const hasPlus = Boolean(dash?.isCoordinaPlus || isUserCoordinaPlus(user));
 
   const mine = useMemo(() => (dash?.events ?? []).map(mapConvexEvent), [dash?.events]);
 
@@ -373,7 +435,17 @@ function Dashboard({
                             <p className="font-medium text-slate-900 dark:text-slate-100">
                               {e.title}
                             </p>
-                            <p className="muted text-xs">{e.category}</p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                              <span className="muted text-xs">{e.category}</span>
+                              {e.regionRestriction?.enabled ? (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+                                  <Icon name="public" className="text-[11px]" />
+                                  {e.regionRestriction.label}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400">· Global IP</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -393,6 +465,30 @@ function Dashboard({
                       </td>
                       <td className="px-5 py-3.5 text-right">
                         <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRegionModalEvent(e);
+                              setDraftRegion(
+                                e.regionRestriction ?? {
+                                  enabled: false,
+                                  mode: 'state',
+                                  label:
+                                    e.city === 'Lagos'
+                                      ? 'Lagos State, Nigeria'
+                                      : 'Abuja (FCT), Nigeria',
+                                  allowedCountries: ['NG'],
+                                  allowedStates:
+                                    e.city === 'Lagos' ? ['Lagos', 'LA'] : ['Abuja (FCT)', 'FC'],
+                                }
+                              );
+                            }}
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50/70 px-2.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300"
+                            title="Configure IP Region Lock (COORDINA Plus)"
+                          >
+                            <Icon name="public" className="text-sm" />
+                            <span>Region Lock</span>
+                          </button>
                           {e.verificationStatus === 'Unverified' && (
                             <button
                               type="button"
@@ -584,13 +680,83 @@ function Dashboard({
           </Button>
         </form>
       </Card>
+
+      <BottomSheet
+        open={Boolean(regionModalEvent)}
+        onClose={() => setRegionModalEvent(null)}
+        title={
+          regionModalEvent
+            ? `IP Region Lock — ${regionModalEvent.title}`
+            : 'Configure IP Region Lock'
+        }
+      >
+        {regionModalEvent && (
+          <div className="space-y-4">
+            <RegionLockConfigurator
+              hasCoordinaPlus={hasPlus}
+              eventCity={regionModalEvent.city}
+              value={draftRegion}
+              onChange={setDraftRegion}
+              onUpgradeClick={() => {
+                setRegionModalEvent(null);
+                onUpgradePlus();
+              }}
+            />
+            {hasPlus && (
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setRegionModalEvent(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  disabled={savingRegion}
+                  onClick={async () => {
+                    if (!user.emailVerified) {
+                      setVerifyModalOpen(true);
+                      return;
+                    }
+                    setSavingRegion(true);
+                    try {
+                      await convex.mutation(api.events.updateEventRegionRestriction, {
+                        userId: user._id as any,
+                        eventId: regionModalEvent.id as any,
+                        regionRestriction: draftRegion,
+                      });
+                      toast(
+                        draftRegion.enabled
+                          ? `IP Region Lock saved: ${draftRegion.label}`
+                          : 'IP Region Lock disabled — tickets open globally.'
+                      );
+                      setRegionModalEvent(null);
+                    } catch (err: any) {
+                      toast(cleanErrorMessage(err, 'Unable to update IP region lock.'));
+                    } finally {
+                      setSavingRegion(false);
+                    }
+                  }}
+                >
+                  {savingRegion ? 'Saving…' : 'Save Region Rule'}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </BottomSheet>
     </div>
   );
 }
 
-function Create({ user, onDone }: { user: SessionUser; onDone: () => void }) {
+function Create({
+  user,
+  onDone,
+  onUpgradePlus,
+}: {
+  user: SessionUser;
+  onDone: () => void;
+  onUpgradePlus: () => void;
+}) {
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
   const { spaces } = useSpacesQuery();
+  const hasPlus = isUserCoordinaPlus(user);
 
   const tomorrowIso = useMemo(() => {
     const d = new Date(Date.now() + 3 * 86400000);
@@ -613,6 +779,13 @@ function Create({ user, onDone }: { user: SessionUser; onDone: () => void }) {
     imageUrl: '',
   });
   const [tiers, setTiers] = useState([{ name: 'Regular', price: 10000, qty: 150 }]);
+  const [regionRestriction, setRegionRestriction] = useState<RegionRestriction>({
+    enabled: false,
+    mode: 'state',
+    label: 'Abuja (FCT), Nigeria',
+    allowedCountries: ['NG'],
+    allowedStates: ['Abuja (FCT)', 'FC'],
+  });
   const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
@@ -700,6 +873,8 @@ function Create({ user, onDone }: { user: SessionUser; onDone: () => void }) {
       tiers: formattedTiers,
       isFree: postingFee.isFree,
       expectedAttendance: totalCap,
+      regionRestriction:
+        hasPlus && regionRestriction.enabled ? regionRestriction : undefined,
     });
 
     toast('Event published to Convex! Complete remote KYC & venue verification next.');
@@ -994,6 +1169,18 @@ function Create({ user, onDone }: { user: SessionUser; onDone: () => void }) {
           </div>
         ))}
       </Card>
+
+      <RegionLockConfigurator
+        hasCoordinaPlus={hasPlus}
+        eventCity={
+          useRegisteredSpace
+            ? spaces.find((s) => s.id === f.spaceId)?.city || 'Abuja'
+            : (AREAS[f.area] ?? AREAS.Wuse).city
+        }
+        value={regionRestriction}
+        onChange={setRegionRestriction}
+        onUpgradeClick={onUpgradePlus}
+      />
 
       <Card
         className={`p-5 ${
@@ -1963,6 +2150,644 @@ function Payouts({
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+function RegionLockConfigurator({
+  hasCoordinaPlus,
+  eventCity,
+  value,
+  onChange,
+  onUpgradeClick,
+}: {
+  hasCoordinaPlus: boolean;
+  eventCity: string;
+  value: RegionRestriction;
+  onChange: (next: RegionRestriction) => void;
+  onUpgradeClick: () => void;
+}) {
+  const { geo: organizerGeo } = useVisitorGeo(hasCoordinaPlus);
+  const [customMode, setCustomMode] = useState(
+    value.enabled &&
+      !REGION_PRESETS.some((p) => p.restriction.label === value.label)
+  );
+  const [customCityInput, setCustomCityInput] = useState(
+    (value.allowedCities ?? []).join(', ')
+  );
+
+  if (!hasCoordinaPlus) {
+    return (
+      <Card className="border-2 border-indigo-500/40 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20">
+              <Icon name="public" className="text-2xl" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Audience IP Region Lock &amp; Geo-Fencing
+                </h3>
+                <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-2.5 py-0.5 text-[10px] font-bold text-white">
+                  <Icon name="workspace_premium" className="text-[11px]" /> COORDINA Plus
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                Lock ticket sales to a specific state, city, or country using live attendee IP
+                verification (e.g. <strong>Abuja FCT Only</strong>, <strong>Lagos Only</strong>, or{' '}
+                <strong>Nigeria Nationwide</strong>). Attendees outside your chosen region cannot
+                buy tickets.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={onUpgradeClick}
+            className="shrink-0 bg-indigo-600 text-white hover:bg-indigo-700"
+          >
+            <Icon name="workspace_premium" /> Unlock with COORDINA Plus
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  const toggleEnabled = () => {
+    if (!value.enabled) {
+      const defaultCityPreset =
+        eventCity.toLowerCase() === 'lagos'
+          ? REGION_PRESETS.find((p) => p.id === 'lagos_state')!
+          : REGION_PRESETS.find((p) => p.id === 'abuja_fct')!;
+      onChange({
+        enabled: true,
+        ...defaultCityPreset.restriction,
+      });
+    } else {
+      onChange({ ...value, enabled: false });
+    }
+  };
+
+  const toggleCountryInCustom = (code: string) => {
+    const exists = value.allowedCountries.includes(code);
+    const nextCountries = exists
+      ? value.allowedCountries.filter((c) => c !== code)
+      : [...value.allowedCountries, code];
+    if (nextCountries.length === 0) return;
+
+    const countryLabels = nextCountries
+      .map((c) => SUPPORTED_COUNTRIES.find((s) => s.code === c)?.name || c)
+      .join(', ');
+    const statePart =
+      value.allowedStates && value.allowedStates.length > 0
+        ? `${value.allowedStates.join(' & ')} (${countryLabels})`
+        : countryLabels;
+
+    onChange({
+      ...value,
+      enabled: true,
+      mode:
+        value.allowedStates && value.allowedStates.length > 0
+          ? 'state'
+          : nextCountries.length > 1
+            ? 'multi'
+            : 'country',
+      allowedCountries: nextCountries,
+      label: statePart,
+    });
+  };
+
+  const toggleStateInCustom = (stateName: string) => {
+    const current = value.allowedStates ?? [];
+    const exists = current.includes(stateName);
+    const nextStates = exists
+      ? current.filter((s) => s !== stateName)
+      : [...current, stateName];
+
+    const countryLabels = value.allowedCountries
+      .map((c) => SUPPORTED_COUNTRIES.find((s) => s.code === c)?.name || c)
+      .join(', ');
+
+    const nextLabel =
+      nextStates.length > 0
+        ? `${nextStates.join(', ')} (${countryLabels || 'Nigeria'})`
+        : countryLabels || 'Nigeria';
+
+    onChange({
+      ...value,
+      enabled: true,
+      mode: nextStates.length > 0 ? 'state' : value.allowedCountries.length > 1 ? 'multi' : 'country',
+      allowedStates: nextStates.length > 0 ? nextStates : undefined,
+      label: nextLabel,
+    });
+  };
+
+  return (
+    <Card className="space-y-4 border-2 border-indigo-500/35 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white">
+            <Icon name="public" className="text-xl" />
+          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                IP Region Lock (Geo-Fenced Ticketing)
+              </h3>
+              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
+                COORDINA Plus Active
+              </span>
+            </div>
+            <p className="muted text-xs">
+              Verify buyer IP address before allowing Add to Plan or Ticket Checkout.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={toggleEnabled}
+          className={`inline-flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-bold transition ${
+            value.enabled
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+          }`}
+        >
+          <Icon name={value.enabled ? 'lock' : 'lock_open'} className="text-sm" />
+          <span>{value.enabled ? 'Region Lock ON' : 'Open Globally (Off)'}</span>
+        </button>
+      </div>
+
+      {value.enabled && (
+        <div className="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+          {organizerGeo && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:bg-midnight-950 dark:text-slate-300">
+              <span>
+                Your current organizer IP:{' '}
+                <strong className="text-slate-900 dark:text-white">
+                  {formatVisitorLocation(organizerGeo)}
+                </strong>
+                {organizerGeo.ip ? ` (${organizerGeo.ip})` : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomMode(false);
+                  const stateLabel = organizerGeo.regionName || organizerGeo.city || organizerGeo.countryName;
+                  onChange({
+                    enabled: true,
+                    mode: organizerGeo.regionName ? 'state' : 'country',
+                    label: `${stateLabel}, ${organizerGeo.countryName || organizerGeo.countryCode}`,
+                    allowedCountries: [organizerGeo.countryCode],
+                    allowedStates: organizerGeo.regionName
+                      ? [organizerGeo.regionName, ...(organizerGeo.regionCode ? [organizerGeo.regionCode] : [])]
+                      : undefined,
+                  });
+                }}
+                className="font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+              >
+                Use My Current IP Region
+              </button>
+            </div>
+          )}
+
+          <div>
+            <p className="mb-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Select Allowed Buyer IP Region
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {REGION_PRESETS.map((preset) => {
+                const active = !customMode && value.label === preset.restriction.label;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setCustomMode(false);
+                      onChange({
+                        enabled: true,
+                        ...preset.restriction,
+                      });
+                    }}
+                    className={`rounded-xl border p-3 text-left transition ${
+                      active
+                        ? 'border-indigo-500 bg-indigo-50/70 dark:bg-indigo-500/15'
+                        : 'border-slate-200 hover:border-indigo-300 dark:border-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">
+                        {preset.title}
+                      </span>
+                      {active && (
+                        <Icon name="check_circle" filled className="text-sm text-indigo-600 dark:text-indigo-400" />
+                      )}
+                    </div>
+                    <p className="muted mt-0.5 text-[11px]">{preset.subtitle}</p>
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomMode(true);
+                  if (!value.allowedCountries.length) {
+                    onChange({
+                      enabled: true,
+                      mode: 'country',
+                      label: 'Nigeria',
+                      allowedCountries: ['NG'],
+                    });
+                  }
+                }}
+                className={`rounded-xl border p-3 text-left transition ${
+                  customMode
+                    ? 'border-indigo-500 bg-indigo-50/70 dark:bg-indigo-500/15'
+                    : 'border-slate-200 hover:border-indigo-300 dark:border-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+                    Custom Country / State Rule
+                  </span>
+                  {customMode && (
+                    <Icon name="tune" className="text-sm text-indigo-600 dark:text-indigo-400" />
+                  )}
+                </div>
+                <p className="muted mt-0.5 text-[11px]">
+                  Pick specific countries, Nigerian states, or cities
+                </p>
+              </button>
+            </div>
+          </div>
+
+          {customMode && (
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-midnight-950/60">
+              <div>
+                <p className="mb-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  1. Allowed Countries (ISO IP Match)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {SUPPORTED_COUNTRIES.map((c) => {
+                    const selected = value.allowedCountries.includes(c.code);
+                    return (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => toggleCountryInCustom(c.code)}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                          selected
+                            ? 'bg-indigo-600 text-white'
+                            : 'border border-slate-200 bg-white text-slate-700 hover:border-indigo-300 dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-300'
+                        }`}
+                      >
+                        {c.name} ({c.code})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {value.allowedCountries.includes('NG') && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    2. Optional Nigerian State Filter (leave unselected to allow all of Nigeria)
+                  </p>
+                  <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                    {NIGERIAN_STATES.map((st) => {
+                      const selected = (value.allowedStates ?? []).includes(st.name);
+                      return (
+                        <button
+                          key={st.code}
+                          type="button"
+                          onClick={() => toggleStateInCustom(st.name)}
+                          className={`rounded-lg px-2 py-1 text-[11px] font-medium transition ${
+                            selected
+                              ? 'bg-violet-600 text-white'
+                              : 'border border-slate-200 bg-white text-slate-600 hover:border-violet-400 dark:border-slate-700 dark:bg-midnight-900 dark:text-slate-300'
+                          }`}
+                        >
+                          {st.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                    Optional Specific Cities (comma-separated)
+                  </label>
+                  <input
+                    value={customCityInput}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setCustomCityInput(raw);
+                      const parsed = raw
+                        .split(',')
+                        .map((x) => x.trim())
+                        .filter(Boolean);
+                      onChange({
+                        ...value,
+                        allowedCities: parsed.length > 0 ? parsed : undefined,
+                      });
+                    }}
+                    placeholder="e.g. Abuja, Ikeja, Accra"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                    Public Region Badge Label
+                  </label>
+                  <input
+                    value={value.label}
+                    onChange={(e) =>
+                      onChange({
+                        ...value,
+                        label: e.target.value || 'Selected Region',
+                      })
+                    }
+                    placeholder="e.g. Lagos & Ogun Residents"
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-950 dark:text-indigo-200">
+            <div className="flex items-center gap-1.5 font-bold">
+              <Icon name="verified_user" className="text-sm text-indigo-600 dark:text-indigo-300" />
+              <span>Active Enforcement: {value.label}</span>
+            </div>
+            <p className="mt-1 text-[11px] opacity-90">
+              Attendees with an IP address outside <strong>{value.label}</strong> cannot add this
+              event to their Plan Cart or buy tickets at Checkout (enforced on both Edge IP &amp;
+              Convex backend).
+            </p>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function CoordinaPlusPanel({
+  user,
+  onCreateClick,
+  onDashboardClick,
+}: {
+  user: SessionUser;
+  onCreateClick: () => void;
+  onDashboardClick: () => void;
+}) {
+  const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+  const { geo, loading: geoLoading, refreshGeo } = useVisitorGeo(true);
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
+  const [subscribing, setSubscribing] = useState(false);
+
+  const hasPlus = isUserCoordinaPlus(user);
+  const expiresAt = user.organizer?.coordinaPlusExpiresAt;
+  const priceNaira = selectedPlan === 'annual' ? 144000 : 15000;
+
+  const activateOnBackend = async (txRef: string) => {
+    try {
+      await convex.mutation(api.events.activateCoordinaPlus, {
+        userId: user._id as any,
+        plan: selectedPlan,
+        transactionRef: txRef,
+      });
+      toast('Welcome to COORDINA Plus! IP Region Lock is now unlocked on your studio.');
+    } catch (err: any) {
+      toast(cleanErrorMessage(err, 'Unable to activate COORDINA Plus.'));
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  const handleSubscribe = async () => {
+    if (!user.emailVerified) {
+      toast('Please verify your organizer email first.');
+      setVerifyModalOpen(true);
+      return;
+    }
+
+    setSubscribing(true);
+    const ref = `CRD-PLUS-${selectedPlan.toUpperCase()}-${Date.now()}`;
+
+    const payRes = await payWithPaystack({
+      email: user.email,
+      amountKobo: priceNaira * 100,
+      reference: ref,
+      metadata: {
+        purpose: 'coordina_plus_subscription',
+        plan: selectedPlan,
+        userId: user._id,
+        organizerName: user.organizer?.businessName || user.name,
+      },
+      onSuccess: (res) => {
+        activateOnBackend(res.reference);
+      },
+      onCancel: () => {
+        setSubscribing(false);
+        toast('COORDINA Plus checkout window closed.');
+      },
+    });
+
+    if (!payRes.launched) {
+      setSubscribing(false);
+      toast(payRes.error || 'Paystack checkout unavailable.');
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-5">
+      <Card className="relative overflow-hidden border-2 border-indigo-500/40 bg-gradient-to-br from-[#0F172A] via-[#1E1B4B] to-[#312E81] p-6 text-white shadow-xl">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-xl">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/40 bg-indigo-500/20 px-3 py-1 text-xs font-bold text-indigo-200">
+              <Icon name="workspace_premium" className="text-sm" /> COORDINA Plus for Organizers
+            </span>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
+              Geo-Fence Your Ticket Sales by Attendee IP Region
+            </h2>
+            <p className="mt-2 text-xs leading-relaxed text-indigo-100/90 sm:text-sm">
+              Keep neighbourhood, campus, city, and national events exclusively in the hands of
+              local attendees. Block out-of-region buyers, foreign bots, and ticket scalpers
+              automatically using real-time IP geolocation.
+            </p>
+          </div>
+          {hasPlus && (
+            <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/20 px-4 py-3 text-right">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                Active Membership
+              </span>
+              <span className="text-sm font-bold text-white">COORDINA Plus</span>
+              {expiresAt && (
+                <span className="mt-0.5 block text-[11px] text-emerald-200">
+                  Valid thru {new Date(expiresAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          {[
+            {
+              icon: 'public',
+              title: 'State & Country IP Locks',
+              desc: 'Target Abuja (FCT), Lagos, Rivers, all 36 Nigerian states, or international hubs.',
+            },
+            {
+              icon: 'gpp_good',
+              title: 'Server-Verified Checkout',
+              desc: 'Enforced on Event Detail, Plan Cart, and Convex Order creation—zero bypass.',
+            },
+            {
+              icon: 'tune',
+              title: 'Live Rule Switching',
+              desc: 'Toggle or update regional IP rules anytime on already-published events.',
+            },
+          ].map((feat) => (
+            <div
+              key={feat.title}
+              className="rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-xs"
+            >
+              <Icon name={feat.icon} className="text-xl text-indigo-300" />
+              <h4 className="mt-2 text-xs font-bold text-white">{feat.title}</h4>
+              <p className="mt-1 text-[11px] leading-relaxed text-indigo-100/80">{feat.desc}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Live IP Inspector Preview */}
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300">
+            <Icon name="my_location" />
+          </span>
+          <div>
+            <p className="text-xs font-bold text-slate-900 dark:text-white">
+              Live Attendee IP Telemetry Preview
+            </p>
+            <p className="muted text-xs">
+              {geoLoading
+                ? 'Resolving your current IP region…'
+                : `Detected Location: ${formatVisitorLocation(geo)}${geo?.ip ? ` · IP ${geo.ip}` : ''}`}
+            </p>
+          </div>
+        </div>
+        <Button size="sm" variant="outline" disabled={geoLoading} onClick={() => refreshGeo()}>
+          <Icon name="refresh" className="text-sm" /> Re-detect IP
+        </Button>
+      </Card>
+
+      {hasPlus ? (
+        <Card className="border-l-4 border-l-emerald-500 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                COORDINA Plus is Unlocked on Your Studio
+              </h3>
+              <p className="muted mt-1 text-xs">
+                Configure IP Region Lock when publishing a new event or click{' '}
+                <strong>Region Lock</strong> next to any published event in your Dashboard.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2.5">
+              <Button onClick={onCreateClick}>
+                <Icon name="add_circle" /> Create Geo-Locked Event
+              </Button>
+              <Button variant="outline" onClick={onDashboardClick}>
+                Manage Published Events
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        <Card className="space-y-4 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Choose Your COORDINA Plus Plan
+              </h3>
+              <p className="muted text-xs">
+                Instant activation via Paystack · Applies across all events in your studio.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setSelectedPlan('monthly')}
+              className={`rounded-2xl border-2 p-4 text-left transition ${
+                selectedPlan === 'monthly'
+                  ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-500/15'
+                  : 'border-slate-200 hover:border-indigo-300 dark:border-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  Monthly Studio Plus
+                </span>
+                <Badge tone="brand">Flexible</Badge>
+              </div>
+              <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">
+                {naira(15000)}
+                <span className="muted text-xs font-normal"> / 30 days</span>
+              </p>
+              <p className="muted mt-1 text-xs">
+                Unlimited region-locked events, Plus host badge &amp; live geo controls.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedPlan('annual')}
+              className={`rounded-2xl border-2 p-4 text-left transition ${
+                selectedPlan === 'annual'
+                  ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-500/15'
+                  : 'border-slate-200 hover:border-indigo-300 dark:border-slate-800'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  Annual Studio Plus
+                </span>
+                <Badge tone="neon">Save 20%</Badge>
+              </div>
+              <p className="mt-2 text-2xl font-extrabold text-slate-900 dark:text-white">
+                {naira(144000)}
+                <span className="muted text-xs font-normal"> / year</span>
+              </p>
+              <p className="muted mt-1 text-xs">
+                Equivalent to {naira(12000)}/mo · Full year of IP Geo-Fencing protection.
+              </p>
+            </button>
+          </div>
+
+          <Button
+            full
+            size="lg"
+            disabled={subscribing}
+            onClick={handleSubscribe}
+            className="bg-indigo-600 text-white hover:bg-indigo-700"
+          >
+            <Icon name="workspace_premium" />
+            {subscribing
+              ? 'Opening Secure Checkout…'
+              : `Subscribe to COORDINA Plus — ${naira(priceNaira)}`}
+          </Button>
+        </Card>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
+import { isOrganizerCoordinaPlus } from './geo';
 
 async function assertAdmin(ctx: any, adminUserId: any) {
   if (!adminUserId) return null;
@@ -389,7 +390,12 @@ export const listAllVerifications = query({
         return {
           ...ver,
           event,
-          organizer,
+          organizer: organizer
+            ? {
+                ...organizer,
+                isCoordinaPlus: isOrganizerCoordinaPlus(organizer),
+              }
+            : null,
           venueConfirmation: venueConf,
         };
       })
@@ -605,5 +611,54 @@ export const getAdminAnalytics = query({
       gmvByDay,
       riskAlerts,
     };
+  },
+});
+
+export const adminSetCoordinaPlus = mutation({
+  args: {
+    adminUserId: v.id('users'),
+    organizerId: v.id('organizers'),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const admin = await assertAdmin(ctx, args.adminUserId);
+    if (!admin) throw new Error('Admin privileges required.');
+
+    const organizer = await ctx.db.get(args.organizerId);
+    if (!organizer) throw new Error('Organizer not found.');
+
+    const now = Date.now();
+    await ctx.db.patch(organizer._id, {
+      coordinaPlus: args.enabled,
+      tier: args.enabled ? 'coordina_plus' : 'basic',
+      coordinaPlusSince: args.enabled ? organizer.coordinaPlusSince ?? now : organizer.coordinaPlusSince,
+      coordinaPlusExpiresAt: args.enabled ? now + 365 * 24 * 60 * 60 * 1000 : undefined,
+      coordinaPlusPlan: args.enabled ? 'annual' : undefined,
+    });
+
+    await ctx.db.insert('notifications', {
+      userId: organizer.userId,
+      title: args.enabled ? 'COORDINA Plus Granted' : 'COORDINA Plus Status Updated',
+      message: args.enabled
+        ? 'COORDINA Compliance has activated COORDINA Plus on your organizer studio, unlocking IP Region Lock controls.'
+        : 'Your COORDINA Plus subscription status has been updated to Basic.',
+      type: 'system',
+      actionUrl: '/organiser',
+      read: false,
+      createdAt: now,
+    });
+
+    await ctx.db.insert('audit_logs', {
+      actorName: admin.name,
+      actorRole: 'admin',
+      actorId: admin._id,
+      action: args.enabled ? 'ADMIN_GRANT_COORDINA_PLUS' : 'ADMIN_REVOKE_COORDINA_PLUS',
+      targetEntity: 'organizers',
+      targetId: organizer._id,
+      details: `${admin.name} ${args.enabled ? 'enabled' : 'disabled'} COORDINA Plus for "${organizer.businessName}"`,
+      timestamp: now,
+    });
+
+    return { success: true, enabled: args.enabled };
   },
 });

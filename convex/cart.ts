@@ -1,5 +1,6 @@
 import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
+import { buyerGeoValidator, checkBuyerGeoAllowed, isOrganizerCoordinaPlus } from './geo';
 
 export const getMyCart = query({
   args: { userId: v.optional(v.id('users')) },
@@ -36,6 +37,8 @@ export const getMyCart = query({
             venue: event.venueName,
             organiserId: String(event.organizerId),
             organiserName: organizerName,
+            organizerCoordinaPlus: isOrganizerCoordinaPlus(org),
+            regionRestriction: event.regionRestriction,
             verified:
               event.verificationStatus === 'Event Verified' ||
               event.verificationStatus === 'Organizer Verified' ||
@@ -62,6 +65,7 @@ export const addOrUpdateItem = mutation({
     eventId: v.id('events'),
     tierId: v.string(),
     qty: v.optional(v.number()),
+    buyerGeo: v.optional(buyerGeoValidator),
   },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
@@ -70,6 +74,16 @@ export const addOrUpdateItem = mutation({
     const event = await ctx.db.get(args.eventId);
     if (!event || event.status !== 'published') {
       throw new Error('This event is not currently available.');
+    }
+
+    if (event.regionRestriction?.enabled) {
+      const geoCheck = checkBuyerGeoAllowed(event.regionRestriction, args.buyerGeo);
+      if (!geoCheck.allowed) {
+        throw new Error(
+          geoCheck.reason ||
+            `Ticket purchases for "${event.title}" are restricted to ${event.regionRestriction.label}.`
+        );
+      }
     }
 
     const tier = event.tiers.find((t) => t.id === args.tierId) ?? event.tiers[0];
@@ -161,11 +175,21 @@ export const swapItem = mutation({
     userId: v.id('users'),
     oldEventId: v.id('events'),
     newEventId: v.id('events'),
+    buyerGeo: v.optional(buyerGeoValidator),
   },
   handler: async (ctx, args) => {
     const newEvent = await ctx.db.get(args.newEventId);
     if (!newEvent || newEvent.status !== 'published') {
       throw new Error('Replacement event is unavailable.');
+    }
+    if (newEvent.regionRestriction?.enabled) {
+      const geoCheck = checkBuyerGeoAllowed(newEvent.regionRestriction, args.buyerGeo);
+      if (!geoCheck.allowed) {
+        throw new Error(
+          geoCheck.reason ||
+            `Ticket purchases for "${newEvent.title}" are restricted to ${newEvent.regionRestriction.label}.`
+        );
+      }
     }
     const availableTier =
       newEvent.tiers.find((t) => t.remaining > 0) ?? newEvent.tiers[0];

@@ -1,5 +1,6 @@
 import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
+import { isOrganizerCoordinaPlus } from './geo';
 
 async function hashPassword(password: string, salt: string): Promise<string> {
   const encoded = new TextEncoder().encode(`${salt}:${password}`);
@@ -37,7 +38,12 @@ function sanitizeUser(user: any, organizer: any = null) {
     emailVerified: Boolean(user.emailVerified),
     onboarded: Boolean(user.onboarded),
     organizerId: organizer?._id ?? null,
-    organizer: organizer ?? null,
+    organizer: organizer
+      ? {
+          ...organizer,
+          isCoordinaPlus: isOrganizerCoordinaPlus(organizer),
+        }
+      : null,
   };
 }
 

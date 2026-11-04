@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
+import { regionRestrictionValidator } from './geo';
 
 export const verificationStatusValidator = v.union(
   v.literal('Unverified'),
@@ -62,7 +63,17 @@ export default defineSchema({
       v.literal('restricted')
     ),
     riskScore: v.number(),
-    tier: v.union(v.literal('basic'), v.literal('verified_pro'), v.literal('enterprise')),
+    tier: v.union(
+      v.literal('basic'),
+      v.literal('verified_pro'),
+      v.literal('coordina_plus'),
+      v.literal('enterprise')
+    ),
+    coordinaPlus: v.optional(v.boolean()),
+    coordinaPlusPlan: v.optional(v.union(v.literal('monthly'), v.literal('annual'))),
+    coordinaPlusSince: v.optional(v.number()),
+    coordinaPlusExpiresAt: v.optional(v.number()),
+    coordinaPlusRef: v.optional(v.string()),
     faceBiometricVerified: v.optional(v.boolean()),
     faceSnapshotUrl: v.optional(v.string()),
     biometricToken: v.optional(v.string()),
@@ -177,6 +188,7 @@ export default defineSchema({
     rating: v.optional(v.number()),
     reviewCount: v.optional(v.number()),
     reportCount: v.optional(v.number()),
+    regionRestriction: v.optional(regionRestrictionValidator),
     createdAt: v.number(),
   })
     .index('by_city', ['city'])
@@ -284,6 +296,8 @@ export default defineSchema({
     paymentMethod: v.union(v.literal('card'), v.literal('transfer'), v.literal('ussd')),
     paymentStatus: v.union(v.literal('pending'), v.literal('paid'), v.literal('failed')),
     transactionRef: v.string(),
+    buyerIp: v.optional(v.string()),
+    buyerRegion: v.optional(v.string()),
     paidAt: v.optional(v.number()),
     createdAt: v.number(),
   })

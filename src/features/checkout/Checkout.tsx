@@ -10,6 +10,14 @@ import { api } from '../../../convex/_generated/api';
 import { sendBookingConfirmationEmail } from '../../lib/email';
 import { payWithPaystack, isPaystackConfigured } from '../../lib/paystack';
 import { toast } from '../../lib/fx';
+import { cleanErrorMessage } from '../../lib/errors';
+import {
+  detectVisitorGeo,
+  evaluateEventRegionAccess,
+  formatVisitorLocation,
+  toConvexBuyerGeo,
+  useVisitorGeo,
+} from '../../lib/geo';
 
 type Method = 'Card' | 'Bank transfer' | 'USSD';
 
@@ -21,6 +29,7 @@ export default function Checkout() {
   const planItems = usePlanItems();
   const { user, isLoading } = useAuth();
   const setVerifyModalOpen = useStore((s) => s.setVerifyModalOpen);
+  const removeFromCart = useStore((s) => s.removeFromCart);
 
   const [method, setMethod] = useState<Method>('Card');
   const [paying, setPaying] = useState(false);
@@ -43,6 +52,24 @@ export default function Checkout() {
   }, [only, onlyTier, onlyQty, all, planItems]);
 
   const eventIds = useMemo(() => rows.map((r) => r.event.id as any), [rows]);
+  const hasAnyRegionLockedEvent = useMemo(
+    () => rows.some((r) => Boolean(r.event.regionRestriction?.enabled)),
+    [rows]
+  );
+  const {
+    geo: visitorGeo,
+    loading: geoLoading,
+    refreshGeo,
+  } = useVisitorGeo(hasAnyRegionLockedEvent);
+
+  const blockedRows = useMemo(() => {
+    if (!hasAnyRegionLockedEvent) return [];
+    return rows.filter((r) => {
+      if (!r.event.regionRestriction?.enabled) return false;
+      const check = evaluateEventRegionAccess(r.event.regionRestriction, visitorGeo);
+      return !check.allowed;
+    });
+  }, [rows, hasAnyRegionLockedEvent, visitorGeo]);
   const promoCheck = useQuery(
     api.events.validatePromoCode,
     appliedCode && eventIds.length > 0
@@ -104,12 +131,14 @@ export default function Checkout() {
   const finalizeOrder = async (txRef: string) => {
     if (!user) return;
     try {
+      const latestGeo = visitorGeo ?? (await detectVisitorGeo());
       const orderRes = await convex.mutation(api.orders.createOrder, {
         userId: user._id as any,
         customerName: user.name,
         customerEmail: user.email,
         customerPhone: user.phone,
         promoCode: promoCheck?.valid ? promoCheck.code : undefined,
+        buyerGeo: toConvexBuyerGeo(latestGeo),
         transactionRef: txRef,
         paymentMethod:
           method === 'Card' ? 'card' : method === 'USSD' ? 'ussd' : 'transfer',
@@ -139,8 +168,12 @@ export default function Checkout() {
       nav(`/success/${orderRes.orderId}`, { replace: true });
     } catch (err: any) {
       setPaying(false);
-      setGatewayError(err?.message || 'Unable to issue tickets. Please contact support with your reference.');
-      toast(err?.message || 'Order creation failed.');
+      const cleanMsg = cleanErrorMessage(
+        err,
+        'Unable to issue tickets. Please contact support with your reference.'
+      );
+      setGatewayError(cleanMsg);
+      toast(cleanMsg);
     }
   };
 
@@ -154,6 +187,23 @@ export default function Checkout() {
       setVerifyModalOpen(true);
       toast('Please verify your email address before purchasing tickets.');
       return;
+    }
+
+    if (hasAnyRegionLockedEvent) {
+      const latestGeo = visitorGeo ?? (await refreshGeo());
+      for (const r of rows) {
+        if (r.event.regionRestriction?.enabled) {
+          const check = evaluateEventRegionAccess(r.event.regionRestriction, latestGeo);
+          if (!check.allowed) {
+            const msg =
+              check.reason ||
+              `Ticket sales for "${r.event.title}" are restricted to ${r.event.regionRestriction.label}.`;
+            setGatewayError(msg);
+            toast(msg);
+            return;
+          }
+        }
+      }
     }
 
     setPaying(true);
@@ -238,6 +288,12 @@ export default function Checkout() {
               <p className="muted text-xs">
                 {fmtDate(r.event.start)} · {r.tier.name} × {r.qty}
               </p>
+              {r.event.regionRestriction?.enabled && (
+                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                  <Icon name="public" className="text-[11px]" />
+                  IP Region: {r.event.regionRestriction.label}
+                </span>
+              )}
             </div>
             <span className="text-sm font-semibold text-slate-900 dark:text-white">
               {r.tier.price === 0 ? 'Free' : naira(r.tier.price * r.qty)}
@@ -245,6 +301,65 @@ export default function Checkout() {
           </div>
         ))}
       </Card>
+
+      {/* IP Region Lock Enforcement Banner */}
+      {hasAnyRegionLockedEvent && blockedRows.length > 0 && !geoLoading && (
+        <Card className="mt-4 border-2 border-rose-500/60 bg-gradient-to-r from-rose-500/15 via-amber-500/5 to-transparent p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 font-bold text-white shadow-sm">
+                <Icon name="location_disabled" className="text-xl" />
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Regional IP Restriction Active
+                  </h4>
+                  <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:text-rose-300">
+                    Purchase Blocked
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                  Your current IP location (
+                  <strong>{formatVisitorLocation(visitorGeo)}</strong>
+                  {visitorGeo?.ip ? ` · ${visitorGeo.ip}` : ''}) is outside the allowed ticket
+                  purchase region for:
+                </p>
+                <ul className="mt-2 space-y-1 text-xs font-medium text-rose-700 dark:text-rose-300">
+                  {blockedRows.map((br) => (
+                    <li key={br.event.id} className="flex items-center gap-1.5">
+                      <Icon name="public" className="text-xs" />
+                      <span>
+                        <strong>{br.event.title}</strong> — Restricted to{' '}
+                        {br.event.regionRestriction?.label}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => refreshGeo()}>
+                <Icon name="refresh" className="text-sm" /> Re-check IP
+              </Button>
+              {!only && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    for (const br of blockedRows) {
+                      await removeFromCart(br.event.id);
+                    }
+                    toast('Removed region-restricted event(s) from your plan.');
+                  }}
+                >
+                  Remove Restricted
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Email Verification Blocker Banner */}
       {isUnverified && (
@@ -471,12 +586,21 @@ export default function Checkout() {
               <Icon name="lock" /> Verify Email to Pay
             </Button>
           ) : (
-            <Button size="lg" className="px-8" disabled={paying} onClick={pay}>
+            <Button
+              size="lg"
+              className="px-8"
+              disabled={paying || (hasAnyRegionLockedEvent && (geoLoading || blockedRows.length > 0))}
+              onClick={pay}
+            >
               {paying
                 ? 'Processing…'
-                : f.total === 0
-                  ? 'Confirm Free RSVP'
-                  : `Pay ${naira(f.total)}`}
+                : hasAnyRegionLockedEvent && geoLoading
+                  ? 'Verifying IP Region…'
+                  : blockedRows.length > 0
+                    ? 'Restricted in Your Region'
+                    : f.total === 0
+                      ? 'Confirm Free RSVP'
+                      : `Pay ${naira(f.total)}`}
             </Button>
           )}
         </div>

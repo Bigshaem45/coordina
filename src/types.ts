@@ -99,6 +99,15 @@ export interface Tier {
   total: number;
 }
 
+export interface RegionRestriction {
+  enabled: boolean;
+  mode: 'country' | 'state' | 'multi';
+  label: string;
+  allowedCountries: string[];
+  allowedStates?: string[];
+  allowedCities?: string[];
+}
+
 export interface Organiser {
   id: string;
   name: string;
@@ -168,6 +177,8 @@ export interface CEvent {
   organiserId: string;
   organiserName?: string;
   organizerVerified?: boolean;
+  organizerCoordinaPlus?: boolean;
+  regionRestriction?: RegionRestriction;
   start: string;
   end: string;
   image: string;

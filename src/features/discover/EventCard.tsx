@@ -8,6 +8,7 @@ import { VerificationBadge } from '../../design-system/VerificationBadge';
 import { fmtDate, fmtTime, naira } from '../../lib/format';
 import { useStore, useAuth, useAllSpaces, usePlanItems } from '../../store';
 import { flyToCart, toast } from '../../lib/fx';
+import { detectVisitorGeo, evaluateEventRegionAccess } from '../../lib/geo';
 
 export function useAddToPlan() {
   const addToCart = useStore((s) => s.addToCart);
@@ -21,6 +22,17 @@ export function useAddToPlan() {
       nav(`/auth?mode=signin&redirect=${encodeURIComponent(loc.pathname + loc.search)}`);
       return;
     }
+    if (e.regionRestriction?.enabled) {
+      const geo = await detectVisitorGeo();
+      const access = evaluateEventRegionAccess(e.regionRestriction, geo);
+      if (!access.allowed) {
+        toast(
+          access.reason ||
+            `Ticket purchases for "${e.title}" are restricted to ${e.regionRestriction.label}.`
+        );
+        return;
+      }
+    }
     const tier =
       e.tiers.find((t) => t.id === tierId) ??
       e.tiers.find((t) => t.remaining > 0) ??
@@ -29,7 +41,8 @@ export function useAddToPlan() {
       toast('This ticket tier is currently sold out.');
       return;
     }
-    await addToCart({ eventId: e.id, tierId: tier.id, qty });
+    const ok = await addToCart({ eventId: e.id, tierId: tier.id, qty });
+    if (!ok) return;
     if (from) flyToCart(from, e.image);
     toast(`Added to plan: ${e.title}`);
   };
@@ -87,11 +100,17 @@ export function EventCard({
               <Icon name="verified" filled className="shrink-0 text-[13px] text-neon-500" />
             )}
           </p>
-          <div className="mt-1 flex items-center gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-2">
             <span className="shrink-0 text-xs font-semibold text-slate-800 dark:text-slate-200">
               {p === 0 ? 'Free' : naira(p)}
             </span>
             <VerificationBadge status={event.verificationStatus ?? 'Unverified'} size="sm" />
+            {event.regionRestriction?.enabled && (
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+                <Icon name="public" className="text-[11px]" />
+                {event.regionRestriction.label}
+              </span>
+            )}
           </div>
         </Link>
         <button
@@ -128,6 +147,12 @@ export function EventCard({
         <span className="absolute left-3 top-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-900 shadow-xs">
           {p === 0 ? 'Free' : naira(p)}
         </span>
+        {event.regionRestriction?.enabled && (
+          <span className="absolute bottom-3 left-3 inline-flex max-w-[85%] items-center gap-1 truncate rounded-lg bg-indigo-950/85 px-2.5 py-1 text-[10px] font-semibold text-indigo-200 backdrop-blur-md">
+            <Icon name="public" className="shrink-0 text-xs text-indigo-300" />
+            <span className="truncate">{event.regionRestriction.label} Only</span>
+          </span>
+        )}
         {low ? (
           <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-lg bg-coral-500 px-2.5 py-1 text-[11px] font-medium text-white shadow-xs">
             <Icon name="bolt" className="text-xs" /> Few left
